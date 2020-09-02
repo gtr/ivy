@@ -1,0 +1,15 @@
+
+(program
+
+    defn fib [0] (0)    # Base case
+    defn fib [1] (1)    # Base case
+    # Recursive case
+    defn fib [n] (+ (fib (- n 2)) (fib (- n 1)))
+
+    def a (fib 6)
+    def b (fib 3)
+
+    println "fib(6)=" a
+    println "fib(3)=" b
+
+)

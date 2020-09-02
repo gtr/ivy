@@ -1,0 +1,20 @@
+(program
+
+    def dracula 3
+
+    # A function that produces functions
+    (defn cheaper_f [max_price]
+        (lambda [book] 
+            if (<= book max_price) ("true") ("false"))
+    )
+    
+    def real_cheap? (cheaper_f 1)
+    def kind_of_cheap? (cheaper_f 5)
+    def marginally_cheap? (cheaper_f 10)
+
+    println (real_cheap? dracula)
+    println (kind_of_cheap? dracula)
+    println (marginally_cheap? dracula)
+
+
+)
