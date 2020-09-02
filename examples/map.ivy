@@ -1,0 +1,20 @@
+(program
+
+    (def mm_food { 
+        @title     "MM.. Food"
+        @artist    "MF Doom"
+        @genres    ["hip-hop"]
+        @year      2004
+    })
+
+    (def hot_house { 
+        @title     "Hot House"
+        @artist    "Arturo Sandoval"
+        @genres    ["jazz" "latin jazz"]
+        @year      1998
+    })
+
+    println (mm_food @title)
+    println (hot_house @genres)
+
+)

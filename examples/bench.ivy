@@ -1,0 +1,12 @@
+(program
+
+    : mul [Int Int] -> Int
+    defn mul [0 0] (0)
+    defn mul [0 1] (0)
+    defn mul [1 0] (0)
+    defn mul [x y] (+ 1 (* x y))
+
+    println (mul 3 2)
+    println (mul 0 1)
+
+)
