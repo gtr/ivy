@@ -1,6 +1,6 @@
 # ivy
 
-<img align="left" width="100" height="100" src="img/ivy.png">
+<img align="left" width="200" height="200" src="img/ivy.png">
 > interpreter for the ivy :herb: programming language
 
 ---
