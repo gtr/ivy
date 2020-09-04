@@ -1,5 +1,6 @@
 # ivy
 
+<img align="left" width="100" height="100" src="img/ivy.png">
 > interpreter for the ivy :herb: programming language
 
 ---
@@ -21,7 +22,7 @@ $ ./ivy file [options]
 Usage:
  ivy file [options]
 
- file		the file containing ivy source code;
+ file       the file containing ivy source code;
             starts the ivy REPL if not specified
 Options:
  -t, --tree	prints a syntax tree of the source code
@@ -53,8 +54,20 @@ Like other Lisps, ivy uses prefix notation. So, instead of `3 + 7`, you would wr
     defn circle_area [r] (* 3.14 (square r))
 
     # Call the function and print the result:
-    println (circle_area radius)
     # Prints: 28.260
+    println (circle_area radius)
+
+    # There's also immutable maps:
+    (def hot_house { 
+        # @key     value
+        @title     "Hot House"
+        @artist    "Arturo Sandoval"
+        @genres    ["jazz" "latin jazz"]
+        @year      1998
+    })
+
+    # Prints: ["jazz" "latin jazz"]
+    println (hot_house @genres) 
 
 )
 ```
@@ -88,7 +101,13 @@ fib(3)=2
 
 ## What's next?
 
-The highest priority at the moment is adding macros to ivy. I'm also strong;ly considering re-writing this project in Rust.
+The highest priority at the moment is adding macros to ivy. One of the future updates will be to make ivy statically-typed but I'm still investigating that possibility I'm also strongly considering re-writing this project in Rust.
+
+## Credits
+
+Author: Gerardo Torres ([github.com/gtr](https://github.com/gtr))
+
+Logo design: Emily Zhou ([morningsbell.carrd.co/](https://morningsbell.carrd.co/))
 
 ## License
 
