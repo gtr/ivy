@@ -108,7 +108,7 @@ The highest priority at the moment is adding macros to ivy. One of the future up
 
 Author: Gerardo Torres ([github.com/gtr](https://github.com/gtr))
 
-Logo design: Emily Zhou ([morningsbell.carrd.co/](https://morningsbell.carrd.co/))
+Logo design: Emily Zhao ([morningsbell.carrd.co/](https://morningsbell.carrd.co/))
 
 ## License
 
