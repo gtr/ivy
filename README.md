@@ -49,8 +49,10 @@ Like other Lisps, ivy uses prefix notation. So, instead of `3 + 7`, you would wr
     def radius_two 3
 
     # You can define functions in several ways:
+    
     # Using `def` and `lambda`
     def square (lambda [x] (* x x))
+    
     # Or using `defn` which is equivalent to the above
     defn circle_area [r] (* 3.14 (square r))
 
@@ -67,8 +69,16 @@ Like other Lisps, ivy uses prefix notation. So, instead of `3 + 7`, you would wr
         @year      1998
     })
 
+    # And nested lists:
+    def my_list ["one" 2 "three" [4 "five"]]
+
     # Prints: ["jazz" "latin jazz"]
     println (hot_house @genres) 
+
+    # Prints: [2 "three" [4 "five"]]
+    println (tail my_list)
+
+    # Check out more examples in the examples/ folder!
 
 )
 ```
@@ -88,21 +98,21 @@ Here's a small demo of `fib`, a function returning the `n-th` number in the fibo
     def a (fib 6)
     def b (fib 3)
 
-    println "fib(6)=" a
-    println "fib(3)=" b
+    println "fib(6) = " a
+    println "fib(3) = " b
 
 )
 ```
 
 This prints:
 ```
-fib(6)=8
-fib(3)=2
+fib(6) = 8
+fib(3) = 2
 ```
 
 ## What's next?
 
-The highest priority at the moment is adding macros to ivy. One of the future updates will be to make ivy statically-typed but I'm still investigating that possibility I'm also strongly considering re-writing this project in Rust.
+The highest priority at the moment is adding macros to ivy. One of the future updates will be to make ivy statically-typed but I'm still investigating that possibility. I'm also strongly considering re-writing this project in Rust.
 
 ## Credits
 
