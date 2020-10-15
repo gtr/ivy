@@ -13,7 +13,7 @@ This project is still a work in progress and is mostly meant to be for education
 Make sure you have [go](https://golang.org/) installed.
 
 ```bash
-$ go get https://github.com/gtr/ivy
+$ go get github.com/gtr/ivy
 $ cd $GOPATH/src/github.com/gtr/ivy/
 $ go build
 $ ./ivy file [options]
