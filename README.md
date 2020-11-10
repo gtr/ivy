@@ -5,7 +5,7 @@
 > interpreter for the ivy :herb: programming language
 
 ---
-ivy :herb: is a programming language I'm working on as an introduction to interpreters. It's a simple language and was heavily inspired by the [Lisp](https://en.wikipedia.org/wiki/Lisp_(programming_language)) family of languages so there's (a lot of (parenthesis)).
+ivy :herb: is a programming language I'm working on as an introduction to interpreters. It's a simple language and was heavily inspired by the [Lisp](https://en.wikipedia.org/wiki/Lisp_(programming_language)) family of languages so there's (a lot of (parentheses)).
 
 This project is still a work in progress and is mostly meant to be for educational purposes so that I can get experience designing and implementing a language from scratch. With that being said, I plan on continously improving various parts of the interpeter as I learn more.
 
