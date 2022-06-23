@@ -1,17 +1,19 @@
 mod lexer;
+mod errors;
 
 use lexer::lexer::*;
 use std::io;
 use std::io::Write;
 use std::env;
+use colored::Colorize;
 
-const PROMPT: &str = "ivy>";
+const PROMPT: &str = "ivy> ";
 
 fn repl() {
     print_repl_message();
 
     loop {
-        print!("{}", PROMPT);
+        print!("{}", PROMPT.green().bold());
         
         let mut buffer = String::new();
         io::stdout().flush().unwrap();
