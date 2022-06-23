@@ -78,6 +78,7 @@ statement:
     ```
     ivy> let pi = 3.14;
     None
+    
     ivy> pi * 2;
     6.28 
     ```
@@ -114,11 +115,13 @@ Functions exist in a couple different variations:
   - Examples:
     ```
     ivy> let square = fn(x) -> x * x;
+    None
 
     ivy> square(8);
     64
 
     ivy> let hello = fn(name) -> "hello " + name;
+    None
 
     ivy> hello("gerardo");
     "hello gerardo"
@@ -130,7 +133,4 @@ lie. Statements *do* produce values, it's just that the value will always be
 `None`. You probably noticed that whenever we define a statement or an 
 anonymous function, the Ivy REPL returned `None`. 
 
-This means that for functions and if expressions, you can also include a stateme
-
-## Features
-Now that we have the basic syntax down for ivy, let's take a look at a few example programs
+This means that for functions and if expressions, you can also include a statement as an expression.
