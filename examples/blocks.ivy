@@ -138,7 +138,7 @@ println("rectangle_area(", l, ",", w, ") = " rectangle_area(l, w));
 
 // This is actually the same as:
 
-let main -> fn() -> {
+let main = fn() -> {
     // Declaring a function which returns the area of a circle given its radius.
     let circle_area = fn (radius) -> 3.14 * radius * radius;
 
