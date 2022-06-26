@@ -1,15 +1,18 @@
-(program 
 
-    (def circle_area (lambda (:radius)
-        (* 3.14 (* radius radius))))
+// Declaring a function which returns the area of a circle given its radius.
+let circle_area = fn (radius) -> 3.14 * radius * radius;
 
-    (def rectangle_area (lambda (:length width)
-        (* length width)))
-    
-    (def r 6)
-    (def l 5)
-    (def w 10)
+// Declaring a funtion which returns the area of a rectangle given its length 
+// and width.
+let rectangle_area = fn (length, width) -> length * width;
 
-    (println "circle_area(" r ")=" (circle_area r))
-    (println "rectangle_area(" l "," w ")=" (rectangle_area l w))
-)
+// Variable binding.
+let r = 6;
+let l = 5;
+let w = 10;
+
+// Prints: circle_area(6) = 113.0400037765503
+println("circle_area(", r, ") = ", circle_area(r));
+
+// Prints: rectangle_area(5, 10) = 50
+println("rectangle_area(", l, ",", w, ") = " rectangle_area(l, w));
