@@ -1,9 +1,13 @@
-(program
+
+// In ivy, lists can be nested and contain any type.
+let my_list = ["one" 2 "three" 3 ["five" 6 "seven"] [8 ["nine"]]];
+
+// Prints the list.
+println(my_list);
+
+// They can also be pattern-matched! Let's define a function that returns the 
+// length of a list.
+let length = fn ([]) -> 0;
+let length = fn ([head:tail]) -> 1 + length(tail);
 
 
-    def my-list ["one" 2 "three" 4 ["five" 6 "seven"] [8 ["nine"]]]
-
-    println my-list
-
-
-)
