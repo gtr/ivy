@@ -1,20 +1,21 @@
-(program
 
-    def dracula 3
+// Defining the price of a book.
+let dracula = 3;
 
-    # A function that produces functions
-    (defn cheaper_f [max_price]
-        (lambda [book] 
-            if (<= book max_price) ("true") ("false"))
-    )
-    
-    def real_cheap? (cheaper_f 1)
-    def kind_of_cheap? (cheaper_f 5)
-    def marginally_cheap? (cheaper_f 10)
+// Defining a function that produces a function. In this case, given a maximum
+// price, it produces a function that given a book price, returns a boolean 
+// indicating whether we can purchase that book.
+def cheaper_f = fn (max_price) -> 
+    fn (book) -> if (book <= max_price) then true else false;
 
-    println (real_cheap? dracula)
-    println (kind_of_cheap? dracula)
-    println (marginally_cheap? dracula)
+// Let's use that higher-order function to produce different variations of the 
+// returned function:
 
+// This function determines if a book is "real" cheap.
+let real_cheap = cheaper_f(1);
 
-)
+// This function determines if a book is "kinda" cheap.
+let kinda_cheap = cheaper_f(5);
+
+// This function determines if a book is "marginally" cheap.
+let marginally_cheap = cheaper_f(10);

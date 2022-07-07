@@ -1,0 +1,161 @@
+// Ivy takes heavy inspiration from the Lisp family of programming languages 
+// and some functional programming language in that (pretty much) anything 
+// in Ivy is an expression. This leads to a more transparent way of programing
+// where symbols can be replaced with their values. For example, take the 
+// following program which helps determine if someone can see a rated R movie.
+
+let age = 23;
+
+if (age >= 18) then true else false;
+
+// The if expression implicitly returns a value: true if the age is greater 
+// than or equal to 18 and false otherwise. Let's bind that expression to a 
+// symbol and print it.
+
+let expr = if (age >= 18) then true else false;
+
+// Prints: true
+println(expr);
+// But this is also equivalent:
+println(if (age >= 18) then true else false);
+
+// ----------------------------------------------------------------------------
+
+// However, it is also possible to write code in Ivy in a more imparative 
+// style. This is done with code blocks which fit inside curly braces: {}.
+// These are really useful when you want to define local variables inside of a
+// function. Let's use the example of the merge sort algorithm for a list.
+
+
+// Step one: merge function.
+// First, let's define a function that takes as input two sorted lists and 
+// merges them into a single sorted list. This does not make use of code blocks
+// yet since we don't need local variables; the match expressions take care of 
+// that for us. This is very similar to how you would write this function in a 
+// purely functional programming language like Haskell.
+
+let merge = fn (lst1, lst2) -> match lst1 (
+    
+    // If the first list is [], the result should only be the second list.
+    | [] -> lst2
+    | [h1:t1] -> match lst2 (
+        
+        // If the second list is [], the result should only be the first list.
+        | []                    -> lst1
+        
+        // If both the first and second list are not empty and the head of the
+        // first list is greater than the head of the second list, then the 
+        // result should be a concatenation of the head of the second list and 
+        // the result of calling the merge function on the entirety of the 
+        // first list and the tail of the second list (since we used its head 
+        // already).
+        | [h2:t2] && (h1 > h2)  -> h2 + merge(lst1, t2)
+        
+        // The last case is where both lists are not empty but the the head of 
+        // the first list is less than or equal to the head of the second list.
+        // In that case, the result should be a concatenation of the head of 
+        // the first list and the result of calling the merge function on the 
+        // tail of the first list (since we used its head already) and the 
+        // entirety of the second list.
+        | [h2:t2] && (h1 <= h2) -> h1 + merge(t1, lst2)
+    );
+);
+
+// Step two: divide function.
+// Next, let's write a function that divides a list into two halves using
+// recursion. Here we will need local symbols (variables) to be able to swap 
+// how we distribute elements between the two lists.
+
+let divide = fn(lst) -> match lst (
+    // Base case: if the given list is empty, then return two empty lists.
+    | []        -> [] []
+
+    // Recursive case: if the given list is not empty, call the divide function
+    // on the tail of the list and bind the results to two variables called 
+    // odds and evens. These are used as temporary local symbols for the 
+    // explicit return statement. When the divide function returns two lists: 
+    // odds and evens, we return the result of concatenating the head of the 
+    // original list with the returned list marked as symbol "evens" and the 
+    // unmodified returned list marked as symbol "odds". Note that since the 
+    // statements inside the {} braces are read in an iterative style, there 
+    // has to be an explicit "return" statement somewhere in the block in order
+    // for a value to be returned.
+    | [h:tail]  -> {
+        let (odds, evens) = divide(tail);
+        return (h + evens, odds);
+    };
+);
+
+// This wouldn't be possible without the code block since there wouldn't be a 
+// way to syntactically express what to do with two different outputs of the 
+// divide function.
+
+// Step one: mergesort function.
+// Lastly, now that we have the divide and merge functions, we can write our 
+// main mergesort function.
+
+let mergesort = fn (lst) -> match lst (
+    // Base case: for an empty list, return an empty list.
+    | []    -> []
+    
+    // Base case: for a list containing one element, return the same list.
+    | [x]   -> [x]
+
+    // For all other cases (in which a list has more than one element), perform
+    // the following iterative staments and return the result of calling the 
+    // merge function on two sorted functions.
+    | _     -> {
+        let evens, odds = divide(lst);
+        let sorted_evens = mergesort(evens);
+        let sorted_odds = mergesort(odds);
+        return merge(sorted_evens, sorted_odds);
+    };
+);
+
+// ----------------------------------------------------------------------------
+
+// While this is a departure from more traditional purely functional languages,
+// it's worth noting that an Ivy program is implicitly a giant code block. 
+// Consider the following code from area.ivy:
+
+// Declaring a function which returns the area of a circle given its radius.
+let circle_area = fn (radius) -> 3.14 * radius * radius;
+
+// Declaring a funtion which returns the area of a rectangle given its length 
+// and width.
+let rectangle_area = fn (length, width) -> length * width;
+
+// Variable binding.
+let r = 6;
+let l = 5;
+let w = 10;
+
+// Prints: circle_area(6) = 113.0400037765503
+println("circle_area(", r, ") = ", circle_area(r));
+
+// Prints: rectangle_area(5, 10) = 50
+println("rectangle_area(", l, ",", w, ") = " rectangle_area(l, w));
+
+// This is actually the same as:
+
+let main = fn() -> {
+    // Declaring a function which returns the area of a circle given its radius.
+    let circle_area = fn (radius) -> 3.14 * radius * radius;
+
+    // Declaring a funtion which returns the area of a rectangle given its length 
+    // and width.
+    let rectangle_area = fn (length, width) -> length * width;
+
+    // Variable binding.
+    let r = 6;
+    let l = 5;
+    let w = 10;
+
+    // Prints: circle_area(6) = 113.0400037765503
+    println("circle_area(", r, ") = ", circle_area(r));
+
+    // Prints: rectangle_area(5, 10) = 50
+    println("rectangle_area(", l, ",", w, ") = " rectangle_area(l, w));   
+}
+
+main();
