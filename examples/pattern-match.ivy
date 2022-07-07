@@ -39,10 +39,10 @@ println("month #", month, " is ", month_name);
 let temp = 68;
 
 println(temp, " => ", match temp (
-    | (temp <= 0)   ->  "it's extremely cold! stay inside..."
-    | (temp <= 55)  ->  "it's chilly out, wear a hoodie."
-    | (temp <= 75)  ->  "it's nice out, dress comfortably."
-    | (temp <= 100) ->  "it's dumb hot out, wear sunscreen."
+    | temp <= 0   ->  "it's extremely cold! stay inside..."
+    | temp <= 55  ->  "it's chilly out, wear a hoodie."
+    | temp <= 75  ->  "it's nice out, dress comfortably."
+    | temp <= 100 ->  "it's dumb hot out, wear sunscreen."
 ));
 
 

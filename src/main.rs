@@ -1,37 +1,13 @@
 mod lexer;
 mod errors;
+mod repl;
+mod parser;
 
-use lexer::lexer::*;
-use std::io;
-use std::io::Write;
 use std::env;
-use colored::Colorize;
-
-const PROMPT: &str = "ivy> ";
-
-fn repl() {
-    print_repl_message();
-
-    loop {
-        print!("{}", PROMPT.green().bold());
-        
-        let mut buffer = String::new();
-        io::stdout().flush().unwrap();
-        match io::stdin().read_line(&mut buffer) {
-            Ok(_) => {
-                let program = buffer.trim_end();
-                if program == "(quit)" {
-                    return;
-                }
-            
-                let token_result = lex(&program);
-            
-                print_tokens(token_result);
-            }
-            Err(error) => println!("error: {error}"),
-        }
-    }
-}
+use std::fs;
+use crate::lexer::lexer::*;
+use crate::repl::repl::*;
+use crate::parser::parser::*;
 
 fn print_usage() {
     print!("Usage:\n ivy file [options]\n\n");
@@ -42,17 +18,21 @@ fn print_usage() {
     print!(" -h, --help\tprints this message\n\n");
 }
 
-fn print_repl_message() {
-    print!("The ivy programming language (v0.1)\n");
-	print!("enter (quit) to quit.\n\n");
+fn open_file(file_name: &String) {
+    let contents = fs::read_to_string(file_name).unwrap();
+
+    let program = contents.trim_end();
+
+    let token_result = lex(&program);
+    if token_result.is_some() {
+        parse(token_result.unwrap());
+    }
 }
 
 fn main() {
     let mut args: Vec<String> = env::args().collect();
-    // let mut tree_flag = false;
     let last = &args[args.len()-1];
     if last == "--tree" || last == "-t" {
-        // tree_flag = true;
         args.pop();
     } else if last == "--help" ||last == "-h" {
         print_usage();
@@ -61,7 +41,7 @@ fn main() {
     if args.len() == 1 {
         repl();
     } else if args.len() == 2 {
-        // Unimplemented.
+        open_file(&args[1]);
     } else {
         print_usage();
     }

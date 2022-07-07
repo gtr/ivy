@@ -4,49 +4,50 @@ use crate::errors::errors;
 fn match_single_token(ch: char) -> Option<Token> {
     match ch {
         '*' => Some(Token::Star),
-        '(' => Some(Token::LeftParen),
-        ')' => Some(Token::RightParen),
-        '[' => Some(Token::LeftBracket),
-        ']' => Some(Token::RightBracket),
+        '(' => Some(Token::LParen),
+        ')' => Some(Token::RParen),
+        '[' => Some(Token::LBracket),
+        ']' => Some(Token::RBracket),
         ',' => Some(Token::Comma),
+        '|' => Some(Token::Pipe),
         ';' => Some(Token::Semicolon),
-        '/' => Some(Token::Slash),
-        _ => None,
+        _   => None,
     }
 }
 
 fn match_keyword(word: String) -> Token {
     match word.as_str() {
-        "let" => Token::Let,
-        "fn" => Token::Fn,
-        "if" => Token::If,
-        "then" => Token::Then,
-        "else" => Token::Else,
-        "true" => Token::True,
-        "false" => Token::False,
-        "print" => Token::Print,
-        "println" => Token::PrintLn,
-        _ => Token::Symbol(word),
+        "let"       => Token::Let,
+        "fn"        => Token::Fn,
+        "if"        => Token::If,
+        "then"      => Token::Then,
+        "else"      => Token::Else,
+        "data"      => Token::Data,
+        "enum"      => Token::Enum,
+        "true"      => Token::True,
+        "false"     => Token::False,
+        "tuple"     => Token::Tuple,
+        "match"     => Token::Match,
+        "print"     => Token::Print,
+        "println"   => Token::PrintLn,
+        "None"      => Token::None,
+        _           => Token::Symbol(word),
     }
 }
 
-pub fn print_tokens(token_result: Result<Vec<Token>, String>) {
-    match token_result {
-        Err(s) => {
-            let error = errors::IvyError::LexerError(s);
+pub fn lex(src: &str) -> Option<Vec<Token>> {
+    match lex_(&src) {
+        Ok(tokens) => Some(tokens),
+        Err(err) => {
+            let error = errors::IvyError::LexerError(err);
             println!("{}", error);
-            return;
-        }
-        Ok(_) => {
-            let tokens = token_result.unwrap().into_iter().collect::<Vec<_>>();
-            for token in tokens {
-                println!("{}", token);
-            }
+            return None;
         }
     }
+
 }
 
-pub fn lex(src: &str) -> Result<Vec<Token>, String> {
+pub fn lex_(src: &str) -> Result<Vec<Token>, String> {
     let mut tokens = Vec::new();
     let mut chars = src.chars().peekable();
 
@@ -114,6 +115,18 @@ pub fn lex(src: &str) -> Result<Vec<Token>, String> {
                 },
                 _ => Token::Less,
             }),
+
+            '/' => match chars.peek() {
+                Some('/') => {
+                    loop {
+                        match chars.next() {
+                            Some('\n') => break,
+                            _ => continue,
+                        }
+                    }
+                }
+                _ => tokens.push(Token::Slash),
+            },
 
             // Pattern matching on a keyword or an identifier.
             s @ 'a' ..= 'z' | s @ 'A'..='Z' => {

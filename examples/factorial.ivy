@@ -1,0 +1,20 @@
+
+// One way to express a factorial function.
+let fact = fn (0) -> 1;
+let fact = fn (x) -> x * fact(x);
+
+// Another way!
+let fact_two = fn (x) -> match (x) (
+    | 0 -> 1
+    | x -> x * fact_two(x)
+);
+
+// Call the function
+fact_two(12);
+
+
+match (1 + 1) (
+    | 1 -> "one"
+    | 2 -> "two"
+    | 3 -> "three"
+);
