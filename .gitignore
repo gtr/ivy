@@ -1,2 +1,3 @@
-ivy
-examples/len.ivy
+/target
+/other
+history.txt

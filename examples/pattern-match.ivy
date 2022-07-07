@@ -1,27 +1,49 @@
-(program
 
-    def month 9
+// Bind the value true to the symbol "condition".
+condition = true;
 
-    (println month " => " (match [month]
-        | 1 ->  "january"
-        | 2 ->  "february"
-        | 3 ->  "march"
-        | 4 ->  "april"
-        | 5 ->  "may"
-        | 6 ->  "june"
-        | 7 ->  "july"
-        | 8 ->  "august"
-        | 9 ->  "september"
-        | 10 -> "october"
-        | 11 -> "november"
-        | 12 -> "december"
-    ))
+// The "match" keyword is an expression, meaning that it produces a value. It
+// takes some symbol (in this case "condition") to match a pattern (in this 
+// case either true or false) and returns the result to the right of the arrow. 
 
-    def temp 68
+// This expression would return the string value "i agree".
+match condition (| true -> "i agree" | false -> "i disagree" | _ -> None);
 
-    (println temp " => " (match [temp]
-        | (<= temp 0)   ->  "it's extremely cold! stay inside..."
-        | (<= temp 55)  ->  "it's chilly out, wear a hoodie."
-        | (<= temp 75)  ->  "it's nice out, dress comfortably."
-        | (<= temp 100) ->  "it's dumb hot out, wear sunscreen."))
-)
+// Define an integer variable.
+let month = 9;
+
+// Since the match keyword produces a value, we can use it directly on a 
+// function. In this case, we define a function month_to_str that when given an
+// integer, returns the equivalent string representation of the month. 
+let month_to_str = fn(month_int) -> match month_int (
+    | 1 ->  "january"
+    | 2 ->  "february"
+    | 3 ->  "march"
+    | 4 ->  "april"
+    | 5 ->  "may"
+    | 6 ->  "june"
+    | 7 ->  "july"
+    | 8 ->  "august"
+    | 9 ->  "september"
+    | 10 -> "october"
+    | 11 -> "november"
+    | 12 -> "december"
+    | _  -> None
+);
+
+// Here we call the function month_to_str
+let month_name = month_to_str(month);
+
+println("month #", month, " is ", month_name);
+
+let temp = 68;
+
+println(temp, " => ", match temp (
+    | temp <= 0   ->  "it's extremely cold! stay inside..."
+    | temp <= 55  ->  "it's chilly out, wear a hoodie."
+    | temp <= 75  ->  "it's nice out, dress comfortably."
+    | temp <= 100 ->  "it's dumb hot out, wear sunscreen."
+));
+
+
+
