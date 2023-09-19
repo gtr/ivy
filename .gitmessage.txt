@@ -1,0 +1,9 @@
+# [Issue #] Crate: Brief summary of changes
+#
+# Detailed description of changes. Remember:
+# - Keep each line under 80 characters
+# - Describe why you're making a change, not just what you're doing
+# 
+# Related issues or links
+
+# (The above lines serve as a guide. Delete them and replace with your commit message.)
