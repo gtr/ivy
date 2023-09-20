@@ -1,0 +1,88 @@
+
+-- file:    guess.ivy
+-- author:  gerardo torres (gtr) 
+-- date:    August 22, 2022
+--
+-- Example ivy source code file for a number guessing game. There is a single
+-- `Game` data type which stores the state of the game. It contains two mutable
+-- fields: `tries`, the number of tries so far; and `over`, a boolean which
+-- indicates wether the game is over. The implementation is a mix of imparative
+-- and functional programming styles with the parts where we mutate the two 
+-- fields being clearlly labeled.
+--
+
+import "convert" ;
+import "random"  ;
+import "std"     ;
+
+-- The greeting we will use for our game prompt.
+let prompt :: String = "Guess a number: ";
+
+-- Represents the relationship between two integers.
+data Comparison ( Less | Equal | Greater );
+
+-- Represents the state of a game.
+struct Game (
+    answer :: Int,
+    tries  :: mut Int,
+    over   :: mut Bool
+);
+
+-- Prints a string to try again.
+fn try_again () => println ("Not an integer, try again!"); 
+
+-- Returns a new Game struct with a random answer between 1 and 100.
+fn new_game :: () -> mut Game;
+fn new_game () => Game (random.between(1, 100), 0, False);
+
+-- Compares the user's guess and the game's correct answer and determines if
+-- it is greater than, equal to, or less than the correct answer.
+fn compare_guess :: (Game, Int) -> Comparison ;
+fn compare_guess (game, guess)  => 
+    if guess == game.answer then Equal
+    else if guess < game.answer then Less
+    else if guess > game.answer then Greater;
+
+-- Returns a string showing the number of tries in the game so far.
+fn get_tries :: Game -> String;
+fn get_tries (game)  => "tries: " + convert.itoa(game.tries) ;
+
+-- Returns a string representing the comparison hint.
+fn show_hint :: (Game, Comparison)  -> String ;
+fn show_hint    (game, comparison)  => match comparison with (
+    | Equal     -> "correct! " + game.get_tries()
+    | Less      -> "too small!"
+    | Greater   -> "too large!"
+);
+
+-- Determines whether to continue the game or not. Note: functions which return
+-- a Boolean value should end with `?`.  
+fn continue? :: Game -> Bool;
+fn continue? (game)  => game.over == False;
+
+-- check_guess checks the user's guess with the game's correct answer.
+fn check_guess :: (mut Game, Int) -> ();
+fn check_guess (game, guess)      => do {
+    mut game.tries = game.tries + 1;
+
+    println(game.show_hint(game.compare_guess(guess)));
+};
+
+-- get_guess prompts the user to guess a number and returns an integer
+-- representing their guess.
+fn get_guess :: () -> Int;
+fn get_guess () => match convert.atoi(std.input(prompt)) with (
+    | Ok(num)   -> num
+    | Err(err)  -> get_guess(try_again())
+);
+
+-- Main loop to play the game
+fn play :: mut Game -> ();
+fn play (game) => match game.continue?() with (
+    | True     -> game.play(game.check_guess(get_guess()))
+    | False    -> println("Game over!")
+);
+
+fn main () => play(new_game()) ;
+
+main(0);

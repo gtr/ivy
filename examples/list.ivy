@@ -1,13 +1,35 @@
 
-// In ivy, lists can be nested and contain any type.
-let my_list = ["one" 2 "three" 3 ["five" 6 "seven"] [8 ["nine"]]];
+-- -- In ivy, lists can be nested and contain any type.
+-- let my_list = ["one" 2 "three" 3 ["five" 6 "seven"] [8 ["nine"]]];
 
-// Prints the list.
-println(my_list);
+-- -- Prints the list.
+-- println(my_list);
 
-// They can also be pattern-matched! Let's define a function that returns the 
-// length of a list.
-let length = fn ([]) -> 0;
-let length = fn ([head:tail]) -> 1 + length(tail);
+-- -- They can also be pattern-matched! Let's define a function that returns the 
+-- -- length of a list.
+-- let length = fn ([]) -> 0;
+-- let length = fn ([head tail]) -> 1 + length(tail);
 
 
+-- do {
+--     return [
+--         [1, 2 ,3],
+--         [3, 5, 6],
+--         [7, 8, 9]
+--     ];
+-- };
+
+-- [
+--     0,0,0,0,0
+-- ];
+
+
+
+data Tree<A> (
+    | Empty
+    | Node :: (A, Tree<A>, Tree<A>)
+);
+
+
+
+-- value :: Result<Node, ParserError>;
