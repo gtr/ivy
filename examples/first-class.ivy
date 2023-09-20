@@ -1,21 +1,25 @@
 
-// Defining the price of a book.
+-- Defining the price of a book.
 let dracula = 3;
 
-// Defining a function that produces a function. In this case, given a maximum
-// price, it produces a function that given a book price, returns a boolean 
-// indicating whether we can purchase that book.
-def cheaper_f = fn (max_price) -> 
-    fn (book) -> if (book <= max_price) then true else false;
+-- Defining a function that produces a function. In this case, given a maximum
+-- price, it produces a function that given a book price, returns a boolean 
+-- indicating whether we can purchase that book.
+let cheaper_f :: Int -> (Int -> Bool);
+let cheaper_f = fn (max_price) -> 
+    fn (book: Int): Bool -> if (book <= max_price) then true else false;
 
-// Let's use that higher-order function to produce different variations of the 
-// returned function:
+-- Let's use that higher-order function to produce different variations of the 
+-- returned function:
 
-// This function determines if a book is "real" cheap.
+-- This function determines if a book is "real" cheap.
+let real_cheap :: Void -> (Int -> Int);
 let real_cheap = cheaper_f(1);
 
-// This function determines if a book is "kinda" cheap.
+-- This function determines if a book is "kinda" cheap.
+let kinda_cheap :: Void -> (Int -> Int);
 let kinda_cheap = cheaper_f(5);
 
-// This function determines if a book is "marginally" cheap.
+-- This function determines if a book is "marginally" cheap.
+let marginally_cheap :: Void -> (Int -> Int);
 let marginally_cheap = cheaper_f(10);

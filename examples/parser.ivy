@@ -1,0 +1,62 @@
+
+
+
+pub data TokenType (
+    -- Atoms
+    | Integer :: i32    (- 42 -)
+    | String  :: String (- "here" -)
+    | Symbol  :: String (- user-defined -)
+    | None              (- None -)
+
+    -- Operators
+    | Plus           (- +  -)    | Minus      (- -  -)
+    | Comment        (- -  -)    | Star       (- *  -)
+    | Slash          (- /  -)    | Bind       (- =  -)
+    | Eq             (- == -)    | Not        (- !  -)
+    | NotEq          (- != -)    | Greater    (- >  -)
+    | GreaterEqual   (- >= -)    | Less       (- <  -)
+    | LessEqual      (- <= -)    | And        (- && -)
+    | Or             (- || -)
+
+    -- Delimeters
+    | Bar            (-  |  -)  | Arrow          (-  -> -)
+    | EqArrow        (-  => -)  | Dot            (-  .  -)
+    | Comma          (-    -)   | Colon          (-  :  -)
+    | Semicolon      (-  ;  -)  | DoubleColon    (-  :: -)
+    | LParen         (-  (  -)  | RParen         (-  )  -)
+    | LBracket       (-  [  -)  | RBracket       (-  ]  -)
+    | LCurly         (-  {  -)  | RCurly         (-  }  -)
+    | CommentLeft    (-   -)    | CommentRight   (-    -)
+
+    -- Keywords
+    | Let            (- let     -)   | Mut        (- mut     -)
+    | Fn             (- fn      -)   | If         (- if      -)
+    | Then           (- then    -)   | Else       (- else    -)
+    | Pub            (- pub     -)   | Data       (- data    -)
+    | Struct         (- struct  -)   | Package    (- package -)
+    | Import         (- import  -)   | Match      (- match   -)
+    | While          (- while   -)   | Do         (- do      -)
+    | Return         (- return  -)
+
+    | EOF            (- end of file -)
+);
+
+-- Token
+struct Token (
+    col :: Int,
+    row :: Int,
+    typ :: TokenType
+);
+
+-- Parser
+struct Parser (
+    tokens :: [Token],
+    cursor :: Int
+);
+
+fn Parse(tokens) => do {
+    let mut p = parser(4) ;
+    
+    
+};
+
