@@ -1,0 +1,122 @@
+
+package trie;
+
+(------------------------------------------------------------------------------
+--
+-- Module       : trie
+-- Author       : Gerardo Torres Castro
+-- Date         : August 30, 2022
+-- License      : GNU Public License
+--
+-- The Ivy programming language standard prelude, which is loaded 
+--
+------------------------------------------------------------------------------)
+
+import "map";
+
+pub struct Trie (
+    children    :: Map<Char, Trie>,
+    is_word     :: Bool
+);
+
+struct Person (
+    age         :: Int,
+    name        :: String,
+    gender      :: Gender,
+    children    :: Map<String, Person>
+);
+
+--- Constructs an empty trie.
+pub fn emptyTrie :: () -> Trie;
+pub fn emptyTrie () => Trie ( map.new(), False ) ;
+
+--- Determines if a trie has children trie nodes.
+pub fn hasChildren? :: Trie -> Bool ;
+pub fn hasChildren? (trie) => trie.children.size() > 0;
+
+--- Determines weather the given trie has a Char letter as a child.
+pub fn hasLetter? :: (Trie, Char) -> Bool ;
+pub fn hasLetter? (trie, letter) => trie.children.exists(letter) ;
+
+--- Determines if the given trie forms a word.
+pub fn isWord :: Trie -> Bool ;
+pub fn isWord (trie) => trie.is_word == True ;
+
+--- Determines if the given trie is a terminal node; i.e. if the given trie does
+--- not contain any other nodes in its map.
+pub fn isTerminal :: Trie -> Bool ;
+pub fn isTerminal (trie) => trie.children.size == 0 ;
+
+--- Returns a new Trie with a given letter inserted.
+pub fn insertLetter :: (Trie, Char) -> Trie ;
+pub fn insertLetter (trie, letter)  => Trie (
+    trie.children.insert(letter, emptyTrie()),
+    trie.isWord
+);
+
+--- Inserts a word into a trie.
+pub fn insertWord :: (Trie, String) -> Trie ;
+pub fn insertWord (trie, "")   => Trie (trie.chilren, True);
+pub fn insertWord (trie, word) => 
+    insertWord(insertLetter(trie, head(word)), tail(word));
+
+--- Inserts a list of words into a trie.
+pub fn insertWords :: (Trie, [String])  -> Trie ;
+pub fn insertWords (trie, [])           => trie ;
+pub fn insertWords (trie, [word | t])   => insertWords(insertWord(trie, word), t);
+
+--- Determines if given a word exists in the trie.
+pub fn wordExists :: (Trie, String) -> Bool ;
+pub fn wordExists (trie, "")   => trie.isWord();
+pub fn wordExists (trie, word) => 
+    if not(hasLetter?(trie, head(word))) then False
+    else wordExists(trie.children[head(word)], tail(word));
+
+--- Returns the node that matches this prefix string, if any.
+pub fn findPrefix :: (Trie, String) -> Optional<Trie> ;
+pub fn findPrefix (trie, "")     => Some(trie) ;
+pub fn findPrefix (trie, prefix) =>  
+    if hasLetter?(trie, head(prefix)) then findPrefix(trie, tail(prefix))
+    else None ;
+
+--- Returns a list of all valid words given a trie.
+pub fn autocomplete :: Trie -> [String] ;
+pub fn autocomplete (trie) => getWords(trie, "");
+
+--- Returns a list of words possible with the given prefix.
+fn getWords :: (Trie, String) -> [String] ;
+fn getWords (trie, curr) => do {
+    let mut words = [];
+
+    let mut pairs = trie.children.iter();
+
+    while !pairs.stop() {
+        match pairs.next() with (
+            | None -> ()
+            | Some((letter, trie_ptr)) -> do {
+                let mut result = trie_ptr.getWords(curr + to_string(letter));
+                mut words = append(words, result);
+            }
+        );
+    };
+
+    if isWord(trie) then mut words = append(words, curr);
+
+    return words;
+};
+
+while this < that {
+    do {
+        struct Person ( 
+            name :: String, 
+            age :: Int
+        );
+        return [
+            [1, 2, 3],
+            [3, 5, 6],
+            [7, 8, 9]
+        ];
+    };
+
+    3 + 56;
+};

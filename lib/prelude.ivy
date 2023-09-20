@@ -1,0 +1,350 @@
+
+package prelude;
+
+-------------------------------------------------------------------------------
+--
+-- Package      : prelude
+-- Author       : Gerardo Torres Castro
+-- Date         : August 30, 2022
+-- License      : GNU Public License
+--
+-- The Ivy programming language standard prelude, which is automatically loaded 
+-- for all ivy programs invoked from the ivy REPL and the ivy compiler. This 
+-- package includes base data types including `Bool`, `String`, `Int`, 
+-- `Optional<a>`, `Result<a, B>` etc. ; base traits like `__show__`, 
+-- `__ord__`, and `__eq__`; and common utility functions like `map`, `filter`, etc.
+-- 
+-- Some base data types and functions (such as those dealing with I/O or time)
+-- are implemented using Rust. To disable the ivy compiler from automatically
+-- loading the prelude, run with the `--no-prelude` option.
+--
+------------------------------------------------------------------------------
+
+--- ---------------------------------------------------------------------------
+--- Built-in data types
+--- ---------------------------------------------------------------------------
+
+data Bool   ( True | False ); 
+data Char   ();
+data String ();
+data Int    ();
+
+--- ---------------------------------------------------------------------------
+--- Built-in traits
+--- ---------------------------------------------------------------------------
+
+--- The `Show` trait is used to transform a data type into a string 
+--- representation. This is often used for printing to standard out.
+--- 
+--- Minimal complete definition: 
+---     * fn __show__ :: a -> String;
+trait Show (
+    fn __show__ :: a -> String;
+);
+
+--- The `Equal` trait is used to determine structural equality. This can be
+--- used to overload the `==` and `!=` operators. 
+---
+--- Minimal complete definition: 
+---     * fn `__==__` :: (a, a) -> Bool;
+trait Equal (
+    --- Returns `True` if the two given objects share structural equality.
+    ---
+    --- This means two objects may be considered equal, if their structure is 
+    --- equal, regardless of their memory locations.
+    fn __==__ :: (a, a) -> Bool;
+
+    --- Returns `True` if the two given objects do not share structural 
+    --- equality.
+    fn __!=__            :: (a, a) -> Bool;
+    fn __!=__ (lhs, rhs) => not (lhs == rhs);
+);
+
+--- a data type describing the ordering between two values. Used in the 
+--- `Compare` trait.
+data Ordering (
+    | Less
+    | Equal
+    | Greater
+);
+
+--- Implements the Show trait for Ordering.
+impl Show for Ordering (
+    fn __show__           :: Ordering -> String;
+    fn __show__ (Less)    => "Less";
+    fn __show__ (Equal)   => "Equal";
+    fn __show__ (Greater) => "Greater";
+);
+
+--- The `Compare` trait is used for totally-ordered data types. This can be used 
+--- for sorting, and for overloading the comparison operators, such as `<` and
+--- `>`. Uses the `Ordering` data type to determine the ordering of two inputs.
+--- 
+--- Minimal complete definition: 
+---     * fn `__compare__` :: (a, a) -> Bool;
+trait Compare (
+
+    --- In order to implement the `Compare` trait, the `__compare__` magic 
+    --- function should be implemented as it returns a `Ordering` data type, 
+    --- which is used by the `<`, `<=`, `>`, and `>=` operators.
+    fn __compare__      :: (a, a) -> Ordering;
+
+    --- Returns `True` if `lhs` is less than `rhs`.
+    fn __<__            :: (a, a) -> Bool;
+    fn __<__ (lhs, rhs) => match __compare__(lhs, rhs) with (
+        | Less -> True
+        | _    -> False
+    );
+
+    --- Returns `True` if `lhs` is less than or equal to `rhs`.
+    fn __<=__            :: (a, a) -> Bool;
+    fn __<=__ (lhs, rhs) => match __compare__(lhs, rhs) with (
+        | Less  -> True
+        | Equal -> True
+        | _     -> False
+    );
+
+    --- Returns `True` if `lhs` is greater than `rhs`.
+    fn __>__            :: (a, a) -> Bool;
+    fn __>__ (lhs, rhs) => match __compare__(lhs, rhs) with (
+        | Greater -> True
+        | _       -> False
+    );
+
+    --- Returns `True` if `lhs` is greater than or equal to `rhs`.
+    fn __>=__            :: (a, a) -> Bool;
+    fn __>=__ (lhs, rhs) => match __compare__(lhs, rhs) with (
+        | Greater -> True
+        | Equal   -> True
+        | _       -> False
+    );
+
+    --- Returns the maximum value.
+    fn __max__            :: (a, a) -> a;
+    fn __max__ (lhs, rhs) => match __compare__(lhs, rhs) with (
+        | Greater -> lhs
+        | _       -> rhs
+    );
+
+    --- Returns the minimum value.
+    fn __min__            :: (a, a) -> a;
+    fn __min__ (lhs, rhs) => match __compare__(lhs, rhs) with (
+        | Less    -> lhs
+        | _       -> rhs
+    );
+);
+
+--- ---------------------------------------------------------------------------
+--- The Boolean data type 
+--- 
+--- Redfined for convinienve:
+---     data Bool ( True | False );
+--- ---------------------------------------------------------------------------
+
+--- Implements the equality trait for the Bool data type.
+impl Equal for Bool (
+    fn __==__                :: (Bool, Bool) -> Bool;
+    fn __==__ (True, True)   => True;
+    fn __==__ (False, False) => True;
+    fn __==__ (_, _)         => False;
+);
+
+--- Implements the Order trait for the Bool data type.
+impl Compare for Bool (
+    fn __compare__               :: (Bool, Bool) -> Comparison;
+    fn __compare__ (False, True) => Less;
+    fn __compare__ (True, False) => Greater;
+    fn __compare__ (_, _)        => Equal;
+);
+
+--- Implements the Show trait for the Bool data type. 
+impl Show for Bool (
+    fn __show__         :: (Bool) -> String;
+    fn __show__ (True)  => "True";
+    fn __show__ (False) => "False";
+);
+
+--- Negates a boolean value.
+fn not         :: Bool -> Bool ;
+fn not (True)  => False;
+fn not (False) => True;
+
+--- ---------------------------------------------------------------------------
+--- Standard I/O
+--- ---------------------------------------------------------------------------
+
+--- Prints a string using rust.
+fn __printRust__ :: String -> ();
+
+fn print         :: a-> ();
+fn print (value) => __printRust__(__show__(value));
+
+fn println         :: a -> ();
+fn println (value) => __printRust__(__show__(value) ++ "\n");
+
+--- ---------------------------------------------------------------------------
+--- The Optional data data and related functions.
+--- ---------------------------------------------------------------------------
+
+--- The `Optional` data encapsulates an optional value. a value of data
+--- `Optional` either contains a value of data `a`, represented as `Some :: a`
+--- or if it's empty, represented as `None`. Using `Optional` is the canonical
+--- way of dealing with errors and exceptions in Ivy.
+data Optional<a> (
+    | None
+    | Some :: a
+);
+
+impl Equal for Optional<a> (
+    fn __==__                    :: (Optional<a>, Optional<a>) -> Bool;
+    fn __==__ (None, None)       => True;
+    fn __==__ (Some(a), Some(b)) => __==__(a, b);
+    fn __==__ (_, _)             => False;
+);
+
+--- Implements the `__show__` function trait for the `Optional` data type.
+impl Show for Optional<a> (
+    fn __show__               :: Optional<a> -> String ;
+    fn __show__ (None)        => "None";
+    fn __show__ (Some(value)) => "Some(" ++ __show__(value) ++ ")";
+);
+
+--- Returns a boolean value indicating whether the given optional contains
+--- `Some(a)` value. 
+fn some?           :: Optional<a> -> Bool ;
+fn some? (None)    => False;
+fn some? (Some(a)) => True;
+
+--- Returns a boolean value indicating whether an optional data type is None.
+fn none?           :: Optional<a> -> Bool ;
+fn none? (None)    => True ;
+fn none? (Some(a)) => False ;
+
+--- Takes a default value and and an `Optional` value. If the `Optional` value
+--- is `None`, it returns the default value. Otherwise, it returns the value
+--- contained in the `Optional`.
+fn fromMaybe                  :: (Optional<a>, a) -> a ;
+fn fromMaybe (None, default)  => default;
+fn fromMaybe (Some(value), _) => value;
+
+--- Returns an empty list when given `None` or a list with an element `value` 
+--- when not given `Some(value)`.
+fn maybeToList               :: Optional<a> -> [a] ;
+fn maybeToList (None)        => [];
+fn maybeToList (Some(value)) => [value];
+
+--- Returns `None` on an empty list or `Some(a)` where `a` is the first element 
+--- of the list.
+fn listToMaybe           :: [a] -> Optional<a> ;
+fn listToMaybe ([])      => None;
+fn listToMaybe ([h | t]) => Some(h);
+
+--- ---------------------------------------------------------------------------
+--- List definition
+--- ---------------------------------------------------------------------------
+
+--- The list data type is a singly linked list.
+--- 
+--- It is either 
+---     * `Nil`: an empty list, or
+---     * `Cons`: a tuple containing a value of type `T` and another List of 
+---        type `List<T>`.
+data List<T> (
+    | Nil
+    | Cons :: (V, List<V>)
+);
+
+impl Show for List<V> (
+    fn __show__ :: List<V> -> String;
+    -- fn __show__ (list) => 
+);
+
+--- ---------------------------------------------------------------------------
+--- List manipulation functions
+--- ---------------------------------------------------------------------------
+
+--- The __singleton__ function is called anytime the compiler notices an empty 
+--- list literal, `[]`.
+fn __singleton__    :: () -> [a];
+fn __singleton__ () => Nil;
+
+--- Map applies a function `func` to each element in list `lst` and returns the
+--- resulting list as a new list.
+fn map                  :: (a -> B, [a]) -> [B] ;
+fn map (func, [])       => [];
+fn map (func, [h | t])  => [func(h)] ++ map(func, tail);
+
+--- Filter applies a predicate function `stay?` to each element in list `lst` 
+--- and returns a new list with all the elements from `lst` which when applied
+--- the `stay?` function, resulted in a True value.
+fn filter                   :: (a -> Bool, [a]) -> [a] ;
+fn filter (stay?, [])       => [];
+fn filter (stay?, [h | t])  => match stay?(head) with (
+    | True  -> [h] ++ filter(stay?, t)
+    | False ->        filter(stay?, t)
+);
+
+--- Returns the head of a list, if it exists.
+fn head        :: [a] -> Optional<a> ;
+fn head (lst)  => match lst with (
+    | []       -> None
+    | [h | t]  -> Some(h)
+);
+
+--- Returns the tail of a list.
+fn tail       :: [a] -> [a] ;
+fn tail (lst) => match lst with (
+    | []      -> []
+    | [h | t] -> t
+);
+
+--- Returns the length of a list.
+-- fn length           :: [a] -> Int ;
+-- fn length ([])      => 0;
+-- fn length ([h | t]) => 1 + length(t);
+
+--- ---------------------------------------------------------------------------
+--- The Result data type and related functions.
+--- ---------------------------------------------------------------------------
+
+--- The result data type is used for error handling in Ivy. There are two 
+--- variants: either a sucess, represented as `Ok(T)` containing a value of 
+--- type `T`; or a failure, represented as `Err(E)` containing an error value 
+--- of type `E`, usually a string describing the error.
+data Result <T, E> (
+    | Ok  :: T
+    | Err :: E
+);
+
+--- The Show trait implemented for the Result<T,E> type.
+impl Show for Result<T,E> (
+    fn __show__             :: Result<T,E> -> String;
+    fn __show__(Ok(value))  => "Ok("  ++ __show__(value) ++ ")";
+    fn __show__(Err(value)) => "Err(" ++ __show__(value) ++ ")";
+);
+
+--- Determines if the result is an instance of the `Ok` variant.
+fn ok?          :: Result<T,E> -> Bool;
+fn ok? (Ok(__)) => True;
+fn ok? (Err(_)) => False;
+
+--- Determines if the result is an instance of the `Err` variant.
+fn err?          :: Result<T,E> -> Bool;
+fn err? (Ok(__)) => False;
+fn err? (Err(_)) => True;
+
+struct Point (
+    @x :: Int
+    @y :: Int
+);
+
+data Gender (
+    | Male
+    | Female
+);
+
+struct Person (
+    @name   :: String
+    @age    :: Int
+    @gender :: Gender
+);

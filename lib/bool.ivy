@@ -1,0 +1,204 @@
+
+
+-- ----------------------------------------------
+-- The Boolean data type 
+-- ----------------------------------------------
+
+data Bool ( True | False );
+
+-- ----------------------------------------------
+-- Boolean data type trait implementations
+-- ----------------------------------------------
+
+--- Implements the equality trait for the Bool data type.
+impl Equal for Bool (
+    fn __==__                :: (Bool, Bool) -> Bool;
+    fn __==__ (True, True)   => True;
+    fn __==__ (False, False) => True;
+    fn __==__ (_, _)         => False;
+);
+
+--- Implements the Order trait for the Bool data type.
+impl Compare for Bool (
+    fn __compare__               :: (Bool, Bool) -> Comparison;
+    fn __compare__ (False, True) => LT;
+    fn __compare__ (True, False) => GT;
+    fn __compare__ (_, _)        => EQ;
+);
+
+--- Implements the Show trait for the Bool data type. 
+impl Show for Bool (
+    fn __show__         :: (Bool) -> String;
+    fn __show__ (True)  => "True";
+    fn __show__ (False) => "False";
+);
+
+
+
+
+
+
+
+
+
+
+Phase 1: 
+
+"input code" -> lexical analysis -> "tokens" -> parsing -> "AST"
+
+Phase 2:
+
+"AST" -> 
+
+1. name resolution
+2. desugaring
+
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------
+---- prelude.ivy ----
+---------------------
+
+fn RUST_compare__ :: (Int, Int) -> Comparison;
+fn RUST_compare__ (a, b) => ();
+
+impl Show for Person (
+    fn __show__          :: Person -> String;
+    fn __show__ (person) => "(" + person.name + ", " + person.age + ")";
+    -- fn __show__ (person) => 
+    -- format("({}, {})", (person.name, person.age));
+);
+
+impl Ord for Person (
+    fn __ord__              :: (Person, Person) -> Comparison;
+    fn __ord__ (this, that) => RUST_compare__(this.age, that.age);
+);
+
+
+
+
+class Ord where (
+    fn 
+);
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+---------------------
+---- person.ivy -----
+---------------------
+
+struct Person (
+    name :: String,
+    age  :: Int
+);
+
+
+
+let bobby = Person("bobby", 23);
+let alice = Person("alice", 24);
+
+
+
+
+[root]
+    0: [let]
+        lhs: [Symbol 'lo']
+        rhs: [Int '6']
+    1: [let]
+        lhs: [Symbol 'hi']
+        rhs: [Int '8']
+    2: [if]
+        cond: [<]
+            lhs: [Symbol 'lo']
+            rhs: [Symbol 'hi']
+        true: [call]
+            lhs: [Symbol 'println']
+            arg: [String "true"]
+        false: [call]
+            lhs: [Symbol 'println']
+            arg: [String "false"]
+
+
+
+
+[root]
+    0: [let]
+        lhs: [Symbol 'lo']
+        rhs: [Int '6']
+    1: [let]
+        lhs: [Symbol 'hi']
+        rhs: [Int '8']
+    2: [if]
+        cond: [<]
+            lhs: [Int '6']
+            rhs: [Int '8']
+        true: [call]
+            lhs: [Symbol 'println']
+            arg: [String "true"]
+        false: [call]
+            lhs: [Symbol 'println']
+            arg: [String "false"]
+
+
+
+impl Ord for Person (
+    fn Ord :: (Person, Person) -> Comparison;
+    fn Ord (self, other) => self.age < other.age;
+);
+
+
+
+[if]
+    cond: [<]
+        lhs: [Symbol 'person_a']
+        rhs: [Symbol 'person_b']
+    true: [call]
+        lhs: [Symbol 'println']
+        arg: [String "true"]
+    false: [call]
+        lhs: [Symbol 'println']
+        arg: [String "false"]
+
+
+name resolution, finds out that `person_a` and `person_b` are `Person` structs.
+
+[<]
+    lhs: <struct Person<123>>
+    rhs: <struct Person<456>>
+
+consults the `Ord` trait for `Person` struct, which says to replace 
+
+[<]
+    lhs: person_a.age
+    rhs: person_b.age
