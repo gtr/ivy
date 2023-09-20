@@ -1,0 +1,99 @@
+
+(------------------------------------------------------------------------------
+--
+-- Package      : prelude
+-- Author       : Gerardo Torres Castro
+-- Date         : August 30, 2022
+-- License      : GNU Public License
+--
+-- The Ivy programming language standard prelude, which is automatically loaded 
+-- for all ivy programs invoked from the ivy REPL and the ivy compiler. This 
+-- package includes base data types including `Bool`, `String`, `Int`, 
+-- `Optional<A>`, `Result<A, B>` etc. ; base traits like `__show__`, 
+-- `__ord__`, and `__eq__`; and common utility functions like `map`, `filter`, etc.
+-- 
+-- Some base data types and functions (such as those dealing with I/O or time)
+-- are implemented using Rust. To disable the ivy compiler from automatically
+-- loading the prelude, run with the `--no-prelude` option.
+--
+------------------------------------------------------------------------------)
+
+-- A data type describing the ordering between two values.
+@derive('Equal');
+data Ordering (
+    | Less
+    | Equal
+    | Greater
+);
+
+-- Implements the Show trait for Ordering.
+impl Show for Ordering (
+    fn __show__           :: Ordering -> String;
+    fn __show__ (Less)    => "Less"
+    fn __show__ (Equal)   => "Equal"
+    fn __show__ (Greater) => "Greater"
+);
+
+--- The compare trait is used for totally-ordered data types. This can be used 
+--- for sorting, and for overloading the comparison operators, such as `<` and
+--- `>`. Uses the `Ordering` data type to determine the ordering of two inputs.
+--- 
+--- Minimal for complete definition: 
+---     * fn `__compare__` :: (A, A) -> Bool;
+trait Compare (
+
+    --- In order to implement the `Compare` trait, the `__compare__` magic 
+    --- function should be implemented as it returns a `Ordering` data type, 
+    --- which is used by the `<`, `<=`, `>`, and `>=` operators.
+    fn __compare__ :: (A, A) -> Ordering;
+
+    --- Returns `True` if `this` is less than `that`.
+    fn __<__              :: (A, A) -> Bool;
+    fn __<__ (this, that) => match __compare__(this, that) with (
+        | Less -> True
+        | _    -> False
+    );
+
+    --- Returns `True` if `this` is less than or equal to `that`.
+    fn __<=__              :: (A, A) -> Bool;
+    fn __<=__ (this, that) => match __compare__(this, that) with (
+        | Less  -> True
+        | Equal -> True
+        | _     -> False
+    );
+
+    --- Returns `True` if `this` is greater than `that`.
+    fn __>__              :: (A, A) -> Bool;
+    fn __>__ (this, that) => match __compare__(this, that) with (
+        | Greater -> True
+        | _       -> False
+    );
+
+    --- Returns `True` if `this` is greater than or equal to `that`.
+    fn __>=__              :: (A, A) -> Bool;
+    fn __>=__ (this, that) => match __compare__(this, that) with (
+        | Greater -> True
+        | Equal -> True
+        | _       -> False
+    ); 
+
+);
+
+--- A trait is used to determine structural equality. This can be used to
+--- overload the `==` operator. 
+---
+--- Minimal for complete definition: 
+---     * fn `__==__` :: (A, A) -> Bool;
+trait Equal {
+    --- Returns `True` if the two given objects share structural equality.
+    ---
+    --- This means two objects may be considered equal, if their structure is 
+    --- equal, regardless of their different memory locations values.
+    fn __==__ :: (A, A) -> Bool;
+
+    --- Returns `True` if the two given objects do not share structural 
+    --- equality.
+    fn __!=__              :: (A, A) -> Bool;
+    fn __!=__ (this, that) => not (this == that);
+}
+

@@ -1,0 +1,56 @@
+
+-- ----------------------------------------------
+-- Shapes lol
+-- ----------------------------------------------
+
+data Result<A, B> (
+    | Ok  :: A
+    | Err :: B
+);
+
+data Num (
+    | Int
+    | Float
+);
+
+fn square :: Num -> Num;
+fn square (x) => x * x;
+
+fn sqrt :: Int -> Float;
+
+struct Point (
+    x :: Int,
+    y :: Int
+);
+
+data Shape (
+    | Line      :: (Point, Point)
+    | Rectangle :: (Point, Point, Point, Point)
+    | Circle    :: (Point, Int)
+);
+
+data Day (
+    | Monday
+    | Tuesday
+    | Wednesday
+    | Thursday
+    | Friday
+    | Saturday
+    | Sunday
+);
+
+fn wednesday? :: Day -> Bool ;
+fn wednesday (Wednesday) => True;
+fn wednesday (otherwise) => False;
+
+fn next :: Day -> Day ;
+fn next (Monday)    => Tuesday;
+fn next (Tuesday)   => Wednesday;
+fn next (Wednesday) => Thursday;
+fn next (Thursday)  => Friday;
+fn next (Friday)    => Saturday;
+fn next (Saturday)  => Sunday;
+fn next (Sunday)    => Monday;
+
+
+
