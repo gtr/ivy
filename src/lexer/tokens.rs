@@ -1,6 +1,7 @@
 use std::fmt;
 
 /// Token represents a token in the ivy programming language.
+#[derive(Debug, PartialEq)]
 pub struct Token {
   pub col: usize,
   pub row: usize,
