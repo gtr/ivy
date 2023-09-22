@@ -9,6 +9,7 @@ use crate::lexer::tokens::*;
 // ====================================
 
 // <letExpr>  ::= 'let' [ 'mut' ]? [ <symbol> | <tupleSymbols> ] [ '::' <typeFn> ]? '=' <expression> ;
+#[derive(Debug, PartialEq)]
 pub struct LetExpr {
   pub symbols: Vec<Node>,
   pub rhs: Box<Node>,
@@ -42,6 +43,7 @@ pub fn NewLetMutExpr(tok: Token, symbols: Vec<Node>, rhs: Node, ttype: Option<No
 // ====================================
 
 // <mutExpr> ::= 'mut' [ <symbol> | <access> ] '=' <expression> ;
+#[derive(Debug, PartialEq)]
 pub struct MutExpr {
   pub lhs: Box<Node>,
   pub rhs: Box<Node>,
@@ -59,9 +61,10 @@ pub fn NewMutExpr(tok: Token, lhs: Node, rhs: Node) -> Node {
 // ====================================
 
 // <fnAnon>  ::= 'fn' <fnArgs> [ ':' <typeFn> ]? '=>' <expression> ;
+#[derive(Debug, PartialEq)]
 pub struct FnAnon {
   pub arguments: Vec<Node>,
-  pub type_out: Box<Option<Node>>,
+  pub type_out: Option<Box<Node>>,
   pub rhs: Box<Node>,
   pub token: Box<Token>,
 }
@@ -69,13 +72,14 @@ pub struct FnAnon {
 pub fn NewFnAnon(tok: Token, arguments: Vec<Node>, type_out: Option<Node>, rhs: Node) -> Node {
   Node::FnAnon(FnAnon { 
     arguments: arguments, 
-    type_out: Box::new(type_out),
+    type_out: type_out.map(Box::new),
     rhs: Box::new(rhs), 
     token: Box::new(tok), 
   })
 }
 
 // <fnSignature> ::= 'fn' <symbol> '::' <typeFn> ;
+#[derive(Debug, PartialEq)]
 pub struct FnSignature {
   pub symbol: Box<Node>,
   pub ttype: Box<Node>,
@@ -89,10 +93,11 @@ pub fn NewFnSignature(tok: Token, symbol: Node, ttype: Node) -> Node {
 }
 
 // <fnDeclaration> ::= 'fn' <symbol> <fnArgs> [ ':' <typeFn> ]? '=>' <expression> ;
+#[derive(Debug, PartialEq)]
 pub struct FnDeclaration {
   pub symbol: Box<Node>,
   pub arguments: Vec<Node>,
-  pub type_out: Box<Option<Node>>,
+  pub type_out:Option<Box<Node>>,
   pub rhs: Box<Node>,
   pub token: Box<Token>,
 }
@@ -104,7 +109,7 @@ pub fn NewFnDeclaration(
   Node::FnDeclaration(FnDeclaration { 
     symbol: Box::new(symbol), 
     arguments: arguments, 
-    type_out: Box::new(type_out), 
+    type_out: type_out.map(Box::new),
     rhs: Box::new(rhs), 
     token: Box::new(tok),
   })
@@ -116,14 +121,15 @@ pub fn NewFnDeclaration(
 
 
 // <fnArgsTyped> ::= <symbol> [ ':' <typeFn> ] ? ;
+#[derive(Debug, PartialEq)]
 pub struct FnArgTyped {
   pub symbol: Box<Node>,
-  pub ttype: Box<Option<Node>>,
+  pub ttype: Option<Box<Node>>,
 }
 
 pub fn NewFnArgTyped(symbol: Node, ttype: Option<Node>) -> Node {
   Node::FnArgTyped ( FnArgTyped{
-    symbol: Box::new(symbol), ttype: Box::new(ttype),
+    symbol: Box::new(symbol), ttype: ttype.map(Box::new),
   })
 }
 
@@ -132,10 +138,11 @@ pub fn NewFnArgTyped(symbol: Node, ttype: Option<Node>) -> Node {
 // ====================================
 
 // <ifExpr> ::= 'if' <or> 'then' <expression> [ 'else' <expression> ]? ;
+#[derive(Debug, PartialEq)]
 pub struct IfExpr {
   pub cond: Box<Node>,
   pub true_branch: Box<Node>,
-  pub false_branch: Box<Option<Node>>,
+  pub false_branch: Option<Box<Node>>,
   pub token: Box<Token>,
 }
 
@@ -145,7 +152,7 @@ pub fn NewIfExpr(
   Node::IfExpr(IfExpr {
     cond: Box::new(cond),
     true_branch: Box::new(true_branch),
-    false_branch: Box::new(false_branch),
+    false_branch: false_branch.map(Box::new),
     token: Box::new(tok),
   })
 }
@@ -155,6 +162,7 @@ pub fn NewIfExpr(
 // ===================================
 
 // <pubExpr> ::= 'pub' [ <fnSignature> | <fnDeclaration> | <typeExpr> | <structStmt> ] ;
+#[derive(Debug, PartialEq)]
 pub struct PubExpr {
   pub rhs: Box<Node>,
   pub token: Box<Token>,
@@ -169,6 +177,7 @@ pub fn NewPubExpr (tok: Token, rhs: Node) -> Node {
 // ====================================
 
 // <dataDeclaration> ::= 'data' <symbol> '(' <typeVariants> ')' ;
+#[derive(Debug, PartialEq)]
 pub struct DataDeclaration {
   pub symbol: Box<Node>,
   pub generics: Vec<Node>,
@@ -184,6 +193,7 @@ pub fn NewDataDelcaration(tok: Token, symbol: Node,  generics: Vec<Node>, varian
 
 // <dataVariants>  ::= [ '|' ]? <dataItem> [ '|' <dataItem> ]* ;
 // <dataItem>      ::= <symbol> [ '::' <typeFn> ]? ;
+#[derive(Debug, PartialEq)]
 pub struct DataItem {
   pub symbol: Box<Node>,
   pub ttype: Box<Node>,
@@ -201,6 +211,7 @@ pub fn NewDataItem(symbol: Node, ttype: Node) -> Node {
 // ====================================
 
 // <structAnon> ::= 'struct' '(' <stuctFields> ')' ;
+#[derive(Debug, PartialEq)]
 pub struct StructAnon {
   pub fields: Vec<Node>,
   pub token: Box<Token>,
@@ -211,6 +222,7 @@ pub fn NewStructAnon(tok: Token, fields: Vec<Node>) -> Node {
 }
 
 // <structDeclaration> ::= 'struct' <symbol> '(' <stuctFields> ')' ;
+#[derive(Debug, PartialEq)]
 pub struct StructDeclaration {
   pub symbol: Box<Node>,
   pub fields: Vec<Node>,
@@ -225,6 +237,7 @@ pub fn NewStructDeclaration(tok: Token, symbol: Node, fields: Vec<Node>) -> Node
 
 // <structFields>      ::= <strictField> [ ',' <strictField> ]* [ ',' ]? ;
 // <structField>       ::= <symbol> '::' <typeFn> ;
+#[derive(Debug, PartialEq)]
 pub struct StructField {
   pub symbol: Box<Node>,
   pub ttype: Box<Node>,
@@ -241,6 +254,7 @@ pub fn NewStructField(symbol: Node, ttype: Node) -> Node {
 // ====================================
 
 // <packageStmt>   ::= 'package' <symbol> ;
+#[derive(Debug, PartialEq)]
 pub struct Package {
   pub token: Box<Token>,
   pub rhs: Box<Node>,
@@ -255,6 +269,7 @@ pub fn NewPackage (rhs: Node, token: Token) -> Node {
 // ====================================
 
 // <importStmt>    ::= 'import' [ <string> | <tupleStrings> ] ;
+#[derive(Debug, PartialEq)]
 pub struct Import {
   pub token: Box<Token>,
   pub rhs: Vec<Node>,
@@ -269,6 +284,7 @@ pub fn NewImport (rhs: Vec<Node>, token: Token) -> Node {
 // ====================================
 
 // <matchExpr>     ::= 'match' <or> '(' [ <matchBranch> ]* ')' ;
+#[derive(Debug, PartialEq)]
 pub struct MatchExpression {
   pub lhs: Box<Node>,
   pub branches: Vec<Node>,
@@ -282,6 +298,7 @@ pub fn NewMatchExpression(tok: Token, lhs: Node, branches: Vec<Node>) -> Node {
 }
 
 // <matchBranch>   ::= '|' <expression> '->' <expression>
+#[derive(Debug, PartialEq)]
 pub struct MatchBranch {
   pub lhs: Box<Node>,
   pub rhs: Box<Node>,
@@ -300,6 +317,7 @@ pub fn NewMatchBranch(tok: Token, lhs: Node, rhs: Node) -> Node {
 
 // <listLiteral>   ::= '[' [ <listItems> ]? ']' ;
 // <listItems>     ::= <expression> [ ',' <expression> ]* ;
+#[derive(Debug, PartialEq)]
 pub struct ListLiteral {
   pub items: Vec<Node>,
   pub token: Box<Token>,
@@ -310,6 +328,7 @@ pub fn NewListExpression(tok: Token, items: Vec<Node>) -> Node {
 }
 
 // <listSplit>     ::= '[ <symbol> '|' <symbol> ']' ;
+#[derive(Debug, PartialEq)]
 pub struct ListSplit {
   pub head: Box<Node>,
   pub tail: Box<Node>,
@@ -324,6 +343,7 @@ pub fn NewListSplit(head: Node, tail: Node) -> Node {
 // ====================================
 
 // <typeFn>    ::= <typeLst>   | <typeLst> '->' <typeLst> ;
+#[derive(Debug, PartialEq)]
 pub struct TypeFn {
   pub lhs: Box<Node>,
   pub rhs: Box<Node>,
@@ -339,6 +359,7 @@ pub fn NewTypeFn(lhs: Node, rhs: Node, token: Token) -> Node {
 }
 
 // <typeLst>   ::= <typeTuple> | '[' <typeFn> ']' ;
+#[derive(Debug, PartialEq)]
 pub struct TypeLst {
   pub ttype: Box<Node>,
   pub token: Box<Token>
@@ -349,6 +370,7 @@ pub fn NewTypeLst(ttype: Node, token: Token) -> Node {
 }
 
 // <typeTuple> ::= <typeCmpst> | '(' <typeFn> [ ',' <typeFn> ]* ')' ;
+#[derive(Debug, PartialEq)]
 pub struct TypeTuple {
   pub ttypes: Vec<Node>,
 }
@@ -356,6 +378,7 @@ pub struct TypeTuple {
 pub fn NewTypeTuple(ttypes: Vec<Node>) -> Node { Node::TypeTuple(TypeTuple { ttypes }) }
 
 // <typeCmpst> ::= <type>      | <symbol> '<' [ <typeFn> [ ',' <typeFn> ]* ] '>' ;
+#[derive(Debug, PartialEq)]
 pub struct TypeCmpst {
   pub ttype: Box<Node>,
   pub items: Vec<Node>,
@@ -366,6 +389,7 @@ pub fn NewTypeCmpst(ttype: Node, items: Vec<Node>) -> Node {
 }
 
 // <type>      ::= [ 'mut' ]? <symbol> | <typeFn> ;
+#[derive(Debug, PartialEq)]
 pub struct Ttype {
   pub symbol: Box<Node>,
   pub is_mut: bool,
@@ -381,6 +405,7 @@ pub fn NewTtype(symbol: Node, is_mut: bool) -> Node {
 // ====================================
 
 // <whileExpr>     ::= 'while' <or> '{' [ <statement> ]* '}' ;
+#[derive(Debug, PartialEq)]
 pub struct WhileExpression {
   pub cond: Box<Node>,
   pub statements: Vec<Node>,
@@ -398,6 +423,7 @@ pub fn NewWhileExpression(tok: Token, cond: Node, statements: Vec<Node>) -> Node
 // ====================================
 
 // <doExpr>        ::= 'do' '{' [ <statement> ]* '}' ;
+#[derive(Debug, PartialEq)]
 pub struct DoExpression {
   pub token: Box<Token>,
   pub statements: Vec<Node>,
@@ -412,6 +438,7 @@ pub fn NewDoExpression(tok: Token, statements: Vec<Node> ) -> Node {
 // ====================================
 
 // <returnExpr>    ::= 'return' <expression> ;
+#[derive(Debug, PartialEq)]
 pub struct ReturnExpression {
   pub value: Box<Node>,
   pub token: Box<Token>,
@@ -427,6 +454,7 @@ pub fn NewReturnExpression(tok: Token, value: Node) -> Node {
 // Trait Statements
 // ====================================
 
+#[derive(Debug, PartialEq)]
 pub struct TraitStmt {
   pub symbol: Box<Node>,
   pub funcs: Vec<Node>,
@@ -443,6 +471,7 @@ pub fn NewTraitStmt(tok: Token, symbol: Node, funcs: Vec<Node>) -> Node {
 // Implementation Statements
 // ====================================
 
+#[derive(Debug, PartialEq)]
 pub struct ImplStmt {
   pub method: Box<Node>,
   pub symbol: Box<Node>,
@@ -463,6 +492,7 @@ pub fn NewImplStmt(tok: Token, method: Node, symbol: Node, funcs: Vec<Node>) -> 
 // Binary & Unary Expressions
 // ====================================
 
+#[derive(Debug, PartialEq)]
 pub struct BinaryExpression {
   pub lhs: Box<Node>,
   pub rhs: Box<Node>,
@@ -481,6 +511,7 @@ pub fn copy_token(tok: &Token) -> Token {
   }
 }
 
+#[derive(Debug, PartialEq)]
 pub struct UnaryExpression {
   pub rhs: Box<Node>,
   pub token: Token,
@@ -495,6 +526,7 @@ pub fn NewUnaryExpression(tok: Token, rhs: Node) -> Node {
 // ====================================
 
 // <call> ::= <access> | <symbol> <tupleAny> ;
+#[derive(Debug, PartialEq)]
 pub struct Call {
   pub lhs: Box<Node>,
   pub args: Vec<Node>,
@@ -511,6 +543,7 @@ pub fn NewCall(lhs: Node, args: Vec<Node>) -> Node {
 // <access> ::= <symbol> '.' <symbol>
 //            | <symbol> '.' <access>
 //            | <symbol> '.' <call>
+#[derive(Debug, PartialEq)]
 pub struct Access {
   pub lhs: Box<Node>,
   pub rhs: Box<Node>,
@@ -521,6 +554,7 @@ pub fn NewAccess(lhs: Node, rhs: Node) -> Node {
 }
 
 // <access> ::= <symbol> '[' <expression> ']' 
+#[derive(Debug, PartialEq)]
 pub struct AccessIndex {
   pub symbol: Box<Node>,
   pub index: Box<Node>,
@@ -538,6 +572,7 @@ pub fn NewAccessIndex(symbol: Node, index: Node) -> Node {
 // ====================================
 
 // <tupleAny>      ::= '(' <expression> [ ','  <expression> ]* ')' ;
+#[derive(Debug, PartialEq)]
 pub struct TupleAny {
   pub items: Vec<Node>,
 }
@@ -547,6 +582,7 @@ pub fn NewTupleAny(items: Vec<Node>) -> Node {
 }
 
 // <tupleSymbols>  ::= '(' <symbol> [ ',' <symbol> ]* [ ',' ]? ')' ;
+#[derive(Debug, PartialEq)]
 pub struct TupleSymbols {
   pub items: Vec<Node>,
 }
@@ -556,6 +592,7 @@ pub fn NewTupleSymbols(items: Vec<Node>) -> Node {
 }
 
 // <tupleStrings>  ::= '(' <string> [ ',' <string> ]* [ ',' ]? ')' ;
+#[derive(Debug, PartialEq)]
 pub struct TupleString {
   pub items: Vec<Node>,
 }
@@ -568,6 +605,7 @@ pub fn NewTupleString(items: Vec<Node>) -> Node {
 // Atoms
 // ====================================
 
+#[derive(Debug, PartialEq)]
 pub struct Atom {
   pub token: Token,
 }
@@ -576,6 +614,7 @@ pub fn NewAtom(tok: Token) -> Node {
   Node::Atom(Atom {token: tok }) 
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Root {
   pub children: Vec<Node>,
 }
@@ -584,6 +623,7 @@ pub fn NewRootNode(children: Vec<Node>) -> Node {
   Node::Root( Root { children })
 }
 
+#[derive(Debug, PartialEq)]
 pub enum Node {
   Root(Root),
 
@@ -662,4 +702,18 @@ pub enum Node {
   
   // [x] Atoms
   Atom(Atom),
+}
+
+/// new_test_token returns a Token with its col and row set to zero, for parser
+/// testing purposes.
+pub fn new_test_token(token_type: TokenType) -> Token {
+  Token { col: 0, row: 0, typ: token_type }
+}
+
+pub fn new_test_symbol_token(name: &str) -> Token {
+  Token { col: 0, row: 0, typ: TokenType::Symbol(name.to_string())}
+}
+
+pub fn new_test_symbol_node(name:&str) -> Node {
+  NewAtom(new_test_token(TokenType::Symbol(name.to_string())))
 }
