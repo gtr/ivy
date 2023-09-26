@@ -123,7 +123,9 @@ impl Parser {
         TokenType::Symbol(_) => {
           symbols.push(self.parse_symbol()?);
         },
-        _ => {}
+        _ => return Err(new_parser_expected_one_of(tok.row, tok.col, vec![
+          format!("<symbol>"), format!("`(`")
+        ]))
       };
     };
 
@@ -517,7 +519,6 @@ impl Parser {
   /// <structField>       ::= <symbol> '::' <typeFn> ;
   /// 
   fn parse_struct_field(&mut self) -> Result<Node, ParserError> {
-    println!("struct field");
     let symbol = self.parse_symbol()?;
     consume_token!(self, TokenType::DoubleColon)?;
     let ttype = self.parse_type_fn()?;
