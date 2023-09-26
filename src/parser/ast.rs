@@ -52,7 +52,7 @@ pub struct MutExpr {
 
 pub fn NewMutExpr(tok: Token, lhs: Node, rhs: Node) -> Node {
   Node::MutExpr(MutExpr { 
-      lhs: Box::new(lhs), rhs: Box::new(rhs), token: Box::new(tok) 
+    lhs: Box::new(lhs), rhs: Box::new(rhs), token: Box::new(tok)
   })
 }
 
