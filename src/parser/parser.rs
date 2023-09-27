@@ -11,7 +11,7 @@ pub struct Parser {
   cursor: usize,
 }
 
-pub fn parse(tokens: Vec<Token>) -> Result<Node, ParserError>{
+pub fn parse(tokens: Vec<Token>) -> Result<Node, IvyError>{
   let mut p = Parser::new(tokens);
   p.parse()
 }
@@ -21,7 +21,7 @@ impl Parser {
     Parser { tokens, cursor: 0 , last: None}
   }
 
-  fn parse(&mut self) -> Result<Node, ParserError> {
+  fn parse(&mut self) -> Result<Node, IvyError> {
     let mut nodes = Vec::new();
 
     while !self.is_done() {
@@ -35,7 +35,7 @@ impl Parser {
   /// 
   /// <statement> ::= <expression> ';' ;
   /// 
-  fn parse_statement(&mut self) -> Result<Node, ParserError> {
+  fn parse_statement(&mut self) -> Result<Node, IvyError> {
     let expr = self.parse_expression()?;
     consume_token!(self, TokenType::Semicolon)?;
 
@@ -60,7 +60,7 @@ impl Parser {
   ///                | <or>           
   ///                | <tupleAny> ;   
   ///
-  fn parse_expression(&mut self) -> Result<Node, ParserError> {
+  fn parse_expression(&mut self) -> Result<Node, IvyError> {
     match self.peek() {
       Some(tok) => {
         match tok.typ {
@@ -94,7 +94,7 @@ impl Parser {
   /// <letExpr> ::= 'let' [ 'mut' ]? [ <symbol> | <tupleSymbols> ] 
   ///                                [ '::' <typeFn> ]? '=' <expression>;
   /// 
-  fn parse_let(&mut self) -> Result<Node, ParserError> {
+  fn parse_let(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Let)?;
     let is_mut = if let Some(tok) = self.peek() {
       if tok.typ == TokenType::Mut {
@@ -153,7 +153,7 @@ impl Parser {
   /// 
   /// <mutExpr> ::= 'mut' [ <symbol> | <access> ] '=' <expression> ;
   /// 
-  fn parse_mut(&mut self) -> Result<Node, ParserError> {
+  fn parse_mut(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Mut)?;
     let lhs = self.parse_access_attr()?;
     consume_token!(self, TokenType::Bind)?;
@@ -166,7 +166,7 @@ impl Parser {
   /// 
   /// <fnExpr> ::= <fnAnon> | <fnSignature> | <fnDeclaration> ;
   /// 
-  fn parse_function(&mut self) -> Result<Node, ParserError> {
+  fn parse_function(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek_twice() {
       match tok.typ {
         TokenType::LParen => self.parse_fn_anon(),
@@ -210,7 +210,7 @@ impl Parser {
   /// 
   /// <fnAnon> ::= 'fn' <fnArgs> [ ':' <typeFn> ]? '=>' <expression> ;
   /// 
-  fn parse_fn_anon(&mut self) -> Result<Node, ParserError> {
+  fn parse_fn_anon(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Fn)?;
     let arguments = self.parse_fn_args()?;
     let type_out = if let Some(tok) = self.peek() {
@@ -234,7 +234,7 @@ impl Parser {
   /// 
   /// <fnSignature> ::= 'fn' <symbol> '::' <typeFn> ;
   /// 
-  fn parse_fn_signature(&mut self) -> Result<Node, ParserError> {
+  fn parse_fn_signature(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Fn)?;
     let symbol = self.parse_symbol()?;
     consume_token!(self, TokenType::DoubleColon)?;
@@ -247,7 +247,7 @@ impl Parser {
   /// 
   /// <fnDeclaration> ::= 'fn' <symbol> <fnArgs> [ ':' <typeFn> ]? '=>' <expression> ;
   /// 
-  fn parse_fn_declaration(&mut self) -> Result<Node, ParserError> {
+  fn parse_fn_declaration(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Fn)?;
     let symbol = self.parse_symbol()?;
     let arguments = self.parse_fn_args()?;
@@ -272,7 +272,7 @@ impl Parser {
   /// <fnArgs>  ::= '(' [ <fnArgsTyped> [ ',' <fnArgsTyped> ]* ]? ')' ;
   /// 
   /// Returns a vector of nodes rather than a single node.
-  fn parse_fn_args(&mut self) -> Result<Vec<Node>, ParserError> {
+  fn parse_fn_args(&mut self) -> Result<Vec<Node>, IvyError> {
     let mut args = Vec::new();
     let mut first = true;
 
@@ -301,7 +301,7 @@ impl Parser {
   ///                              | <integer>
   ///                              | <string> ;
   /// 
-  fn parse_fn_arg(&mut self) -> Result <Node, ParserError> {
+  fn parse_fn_arg(&mut self) -> Result <Node, IvyError> {
     if let Some(tok) = self.peek() {
       match tok.typ {
         TokenType::LBracket   => { return self.parse_list(); },
@@ -334,7 +334,7 @@ impl Parser {
   /// 
   /// <ifExpr> ::= 'if' <or> 'then' <expression> [ 'else' <expression> ]? ;
   /// 
-  fn parse_if(&mut self) -> Result <Node, ParserError> {
+  fn parse_if(&mut self) -> Result <Node, IvyError> {
     let token = consume_token!(self, TokenType::If)?;
     let cond = self.parse_expression()?;
     consume_token!(self, TokenType::Then)?;
@@ -351,7 +351,7 @@ impl Parser {
     Ok(NewIfExpr(token, cond, true_branch, false_branch))
   }
 
-  fn parse_pub(&mut self) -> Result<Node, ParserError> {
+  fn parse_pub(&mut self) -> Result<Node, IvyError> {
     Ok (NewPubExpr(
       consume_token!(self, TokenType::Pub)?,
       self.parse_expression()?,
@@ -363,7 +363,7 @@ impl Parser {
   /// <dataExpr>      ::= 'data' <symbol> [ <dataGenerics> ]? '(' <dataVariants> ')' ;
   /// <dataVariants>  ::= [ '|' ]? <dataItem> [ '|' <dataItem> ]* ;
   /// 
-  fn parse_data(&mut self) -> Result<Node, ParserError> {
+  fn parse_data(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Data)?;
     let symbol = self.parse_symbol()?;
     let mut generics = Vec::new();
@@ -402,7 +402,7 @@ impl Parser {
   /// 
   /// <dataGenerics>  ::= '<' <symbol> [',' <symbol> ]* '>' ;
   /// 
-  fn parse_data_generics(&mut self) -> Result<Vec<Node>, ParserError> {
+  fn parse_data_generics(&mut self) -> Result<Vec<Node>, IvyError> {
     let mut first = true;
     let mut generics = Vec::new();
     consume_token!(self, TokenType::Less)?;
@@ -428,7 +428,7 @@ impl Parser {
   /// 
   /// <dataItem>      ::= <symbol> [ '::' ( <typeFn> )]? ;
   /// 
-  fn parse_data_item(&mut self) -> Result<Node, ParserError> {
+  fn parse_data_item(&mut self) -> Result<Node, IvyError> {
     let symbol = self.parse_symbol()?;
     if let Some(tok) = self.peek() {
       if tok.typ == TokenType::DoubleColon {
@@ -453,7 +453,7 @@ impl Parser {
 
 
 
-  fn parse_struct(&mut self) -> Result<Node, ParserError> {
+  fn parse_struct(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek_twice() {
       match tok.typ {
         TokenType::Symbol(_) => {
@@ -470,7 +470,7 @@ impl Parser {
   /// 
   /// <structAnon> ::= 'struct' '(' <structFields> ')' ;
   /// 
-  fn parse_struct_anon(&mut self) -> Result<Node, ParserError> {
+  fn parse_struct_anon(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Struct)?;
     consume_token!(self, TokenType::LParen)?;
     let mut fields = Vec::new();
@@ -494,7 +494,7 @@ impl Parser {
   /// <structDeclaration> ::= 'struct' <symbol> '(' <structFields> ')' ;
   /// <structFields>      ::= <structField> [ ',' <structField> ]* [ ',' ]? ;
   /// 
-  fn parse_struct_declaration(&mut self) -> Result<Node, ParserError> {
+  fn parse_struct_declaration(&mut self) -> Result<Node, IvyError> {
     let struct_tok = consume_token!(self, TokenType::Struct)?;
     let name = self.parse_symbol()?;
     consume_token!(self, TokenType::LParen)?;
@@ -518,7 +518,7 @@ impl Parser {
   /// 
   /// <structField>       ::= <symbol> '::' <typeFn> ;
   /// 
-  fn parse_struct_field(&mut self) -> Result<Node, ParserError> {
+  fn parse_struct_field(&mut self) -> Result<Node, IvyError> {
     let symbol = self.parse_symbol()?;
     consume_token!(self, TokenType::DoubleColon)?;
     let ttype = self.parse_type_fn()?;
@@ -530,7 +530,7 @@ impl Parser {
   /// 
   /// <packageStmt>   ::= 'package' <symbol> ;
   /// 
-  fn parse_package(&mut self) -> Result<Node, ParserError> {
+  fn parse_package(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Package)?;
 
     Ok(NewPackage(self.parse_symbol()?, token))
@@ -540,7 +540,7 @@ impl Parser {
   /// 
   /// <importStmt>        ::= 'import' [ <string> | <tupleStrings> ] ;
   /// 
-  fn parse_import(&mut self) -> Result<Node, ParserError> {
+  fn parse_import(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Import)?;
 
     if let Some(tok) = self.peek() {
@@ -576,7 +576,7 @@ impl Parser {
   /// 
   /// <matchExpr> ::= 'match' <expression> 'with' '(' [ <matchBranch> ]* ')' ;
   /// 
-  fn parse_match(&mut self) -> Result<Node, ParserError> {
+  fn parse_match(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Match)?;
     let lhs = self.parse_expression()?;
     consume_token!(self, TokenType::With)?;
@@ -599,7 +599,7 @@ impl Parser {
   /// 
   /// <matchBranch>   ::= '|' <expression> '->' <expression>
   /// 
-  fn parse_match_branch(&mut self) -> Result<Node, ParserError> {
+  fn parse_match_branch(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Bar)?;
     let lhs = self.parse_expression()?;
     consume_token!(self, TokenType::Arrow)?;
@@ -612,7 +612,7 @@ impl Parser {
   /// 
   /// <listExpr>      ::= <listSplit> | <listLiteral> ;
   /// 
-  fn parse_list(&mut self) -> Result<Node, ParserError> {
+  fn parse_list(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek_twice() {
       match tok.typ {
         TokenType::RBracket => self.parse_list_literal(),
@@ -633,7 +633,7 @@ impl Parser {
   /// 
   /// <listSplit>     ::= '[' <symbol> '|' <symbol> ']' ;
   /// 
-  fn parse_list_split(&mut self) -> Result<Node, ParserError> {
+  fn parse_list_split(&mut self) -> Result<Node, IvyError> {
     consume_token!(self, TokenType::LBracket)?;
     let h = self.parse_symbol()?;
     consume_token!(self, TokenType::Bar)?;
@@ -648,7 +648,7 @@ impl Parser {
   /// <listLiteral>   ::= '[' [ <listItems> ]? ']' ;
   /// <listItems>     ::= <expression> [ ',' <expression> ]* ;
   /// 
-  fn parse_list_literal(&mut self) -> Result<Node, ParserError> {
+  fn parse_list_literal(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::LBracket)?;
     let mut items = Vec::new();
     let mut first = true;
@@ -674,7 +674,7 @@ impl Parser {
   /// 
   /// <whileExpr>     ::= 'while' <or> '{' [ <statement> ]* '}' ;
   /// 
-  fn parse_while(&mut self) -> Result<Node, ParserError> {
+  fn parse_while(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::While)?;
     let cond = self.parse_expression()?;
     let mut stmts = Vec::new();
@@ -697,7 +697,7 @@ impl Parser {
   /// 
   /// <doExpr>        ::= 'do' '{' [ <statement> ]* '}' ;
   /// 
-  fn parse_do(&mut self) -> Result<Node, ParserError> {
+  fn parse_do(&mut self) -> Result<Node, IvyError> {
     let tok = consume_token!(self, TokenType::Do)?;
     consume_token!(self, TokenType::LCurly)?;
     let mut stmts = vec![];
@@ -725,7 +725,7 @@ impl Parser {
   /// 
   /// <returnExpr>    ::= 'return' <expression> ;
   /// 
-  fn parse_return(&mut self) -> Result<Node, ParserError> {
+  fn parse_return(&mut self) -> Result<Node, IvyError> {
     Ok(NewReturnExpression(consume_token!(
       self, TokenType::Return)?, 
       self.parse_expression()?
@@ -736,7 +736,7 @@ impl Parser {
   /// 
   /// <traitStmt> ::= 'trait' <symbol> '(' [ <fnExpr> ';' ]* ')' ;
   /// 
-  fn parse_trait(&mut self) -> Result<Node, ParserError> {
+  fn parse_trait(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Trait)?;
     let symbol = self.parse_symbol()?;
     consume_token!(self, TokenType::LParen)?;
@@ -757,7 +757,7 @@ impl Parser {
   }
 
   /// <implExpr>  ::= 'impl' <symbol> 'for' <typeFn> '(' [ <fnExpr> ';' ]* ')' ;
-  fn parse_impl(&mut self) -> Result<Node, ParserError> {
+  fn parse_impl(&mut self) -> Result<Node, IvyError> {
     let token = consume_token!(self, TokenType::Impl)?;
     let symbol = self.parse_symbol()?;
     consume_token!(self, TokenType::For)?;
@@ -783,7 +783,7 @@ impl Parser {
   /// 
   /// <typeFn>    ::= <typeCmpst> [ '->' <typeCmpst> ]? ;
   /// 
-  fn parse_type_fn(&mut self) -> Result<Node, ParserError> {
+  fn parse_type_fn(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_type_cmpst()?;
 
     while let Some(tok) = self.peek() {
@@ -804,7 +804,7 @@ impl Parser {
   /// 
   /// <typeCmpst> ::= <typeLst> | <symbol> '<' [ <typeLst> [ ',' <typeLst> ]* ] '>' ;
   /// 
-  fn parse_type_cmpst(&mut self) -> Result<Node, ParserError> {
+  fn parse_type_cmpst(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek_twice() {
       if tok.typ == TokenType::Less {
 
@@ -837,7 +837,7 @@ impl Parser {
   /// 
   /// <typeLst>   ::= <typeTuple> | '[' <typeTuple> ']' ;
   ///  
-  fn parse_type_lst(&mut self) -> Result<Node, ParserError> {
+  fn parse_type_lst(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek() {
       if tok.typ == TokenType::LBracket {
         let token = consume_token!(self, TokenType::LBracket)?;
@@ -853,7 +853,7 @@ impl Parser {
   /// 
   /// <typeTuple> ::= <typeFn> | '(' <typeFn> [ ',' <typeFn> ]* ')' ;
   ///  
-  fn parse_type_tuple(&mut self) -> Result<Node, ParserError> {
+  fn parse_type_tuple(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek() {
       if tok.typ == TokenType::LParen {
         consume_token!(self, TokenType::LParen)?;
@@ -883,7 +883,7 @@ impl Parser {
   /// 
   /// <type>      ::= [ 'mut' ]?  [ <symbol> | <typeFn> ] ;
   /// 
-  fn parse_type(&mut self) -> Result<Node, ParserError> {
+  fn parse_type(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek() {
       match tok.typ {
         TokenType::Mut => {
@@ -909,7 +909,7 @@ impl Parser {
   /// 
   /// <or> ::= <and> [ '||' <and> ]* ;
   /// 
-  fn parse_or(&mut self) -> Result<Node, ParserError> {
+  fn parse_or(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_and()?;
 
     while let Some(tok) = self.peek() {
@@ -930,7 +930,7 @@ impl Parser {
   /// 
   /// <and> ::= <equality> [ '&&' <equality> ]* ;
   /// 
-  fn parse_and(&mut self) -> Result<Node, ParserError> {
+  fn parse_and(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_equality()?;
 
     while let Some(tok) = self.peek() {
@@ -951,7 +951,7 @@ impl Parser {
   /// 
   /// <equality>      ::= <comparison> [ [ '==' | '!=' ] <comparison> ]* ;
   /// 
-  fn parse_equality(&mut self) -> Result<Node, ParserError> {
+  fn parse_equality(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_comparison()?;
 
     while let Some(tok) = self.peek() {
@@ -975,7 +975,7 @@ impl Parser {
   ///                              | '<' 
   ///                              | '<=' ] <addition> ]* ;
   /// 
-  fn parse_comparison(&mut self) -> Result<Node, ParserError> {
+  fn parse_comparison(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_addition()?;
 
     while let Some(tok) = self.peek() {
@@ -997,7 +997,7 @@ impl Parser {
   /// 
   /// <addition> ::= <mult> [ ( '+' | '-' | '++' ) <mult> ]* ;
   /// 
-  fn parse_addition(&mut self) -> Result<Node, ParserError> {
+  fn parse_addition(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_mult()?;
 
     while let Some(tok) = self.peek() {
@@ -1018,7 +1018,7 @@ impl Parser {
   /// 
   /// <mult> ::= <unary> [ ( '*' | '/' ) <unary> ]* ;
   /// 
-  fn parse_mult(&mut self) -> Result<Node, ParserError> {
+  fn parse_mult(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_unary()?;
 
     while let Some(tok) = self.peek() {
@@ -1039,7 +1039,7 @@ impl Parser {
   /// 
   /// <unary> ::= [ '!' | '-' ] <callExpr> | <callExpr> ;
   /// 
-  fn parse_unary(&mut self) -> Result<Node, ParserError> {
+  fn parse_unary(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek() {
       match tok.typ {
         TokenType::Not | TokenType::Minus  => {
@@ -1055,7 +1055,7 @@ impl Parser {
   /// 
   /// <callExpr> ::= <accessAttr> | <accessAttr> <tuple> ;
   /// 
-  fn parse_call(&mut self) -> Result<Node, ParserError> {
+  fn parse_call(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek() {
       match tok.typ {
         TokenType::Symbol(_) => {
@@ -1078,7 +1078,7 @@ impl Parser {
   /// 
   /// <accessAttr>    ::= <accessIndx> [ '.' <callExpr> ]* ;
   /// 
-  fn parse_access_attr(&mut self) -> Result<Node, ParserError> {
+  fn parse_access_attr(&mut self) -> Result<Node, IvyError> {
     let mut expr = self.parse_access_indx()?;
 
     while let Some(tok) = self.peek() {
@@ -1099,7 +1099,7 @@ impl Parser {
   /// 
   /// <accessIndx>    ::= <factor> [ '[' <or> ']' ]* ;
   /// 
-  fn parse_access_indx(&mut self) -> Result<Node, ParserError> {
+  fn parse_access_indx(&mut self) -> Result<Node, IvyError> {
     let mut lhs = self.parse_factor()?;
 
     while let Some(tok) = self.peek() {
@@ -1125,7 +1125,7 @@ impl Parser {
   ///               | <listExpr> 
   ///               | <atom> ;
   /// 
-  fn parse_factor(&mut self) -> Result<Node, ParserError> {
+  fn parse_factor(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.peek() {
       match tok.typ {
         TokenType::LParen => {
@@ -1145,7 +1145,8 @@ impl Parser {
         _ => Err(new_parser_expected(tok.row, tok.col, "<factor>".to_string()))
       }
     } else {
-      Err( new_parser_expected(0, 0, "".to_string()))
+      let (r, c) = self.get_last_token_location();
+      Err( new_parser_expected(r, c + 1, "<factor>".to_string()))
     }
   }
 
@@ -1170,7 +1171,7 @@ impl Parser {
   /// 
   /// <tuple> ::= '(' <expression> [ ',' <expression> ]* ')' ;
   /// 
-  fn parse_tuple(&mut self) -> Result<Node, ParserError> {
+  fn parse_tuple(&mut self) -> Result<Node, IvyError> {
     let mut exprs = Vec::new();
     let mut first = true;
 
@@ -1191,7 +1192,7 @@ impl Parser {
   }
   /// Same as `parse_tuple` but returns a vector of nodes rather than a 
   /// single node.
-  fn parse_tuple_vec(&mut self) -> Result<Vec<Node>, ParserError> {
+  fn parse_tuple_vec(&mut self) -> Result<Vec<Node>, IvyError> {
     let mut exprs = Vec::new();
     let mut first = true;
 
@@ -1211,7 +1212,7 @@ impl Parser {
     Ok(exprs)
   }
 
-  fn parse_symbol(&mut self) -> Result<Node, ParserError> {
+  fn parse_symbol(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.next() {
       match tok.typ {
         TokenType::Symbol(_) => Ok(NewAtom(tok)),
@@ -1223,7 +1224,7 @@ impl Parser {
     }
   }
 
-  fn parse_string(&mut self) -> Result<Node, ParserError> {
+  fn parse_string(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.next() {
       match tok.typ {
         TokenType::String(_) => Ok(NewAtom(tok)),
@@ -1235,7 +1236,7 @@ impl Parser {
     }
   }
 
-  fn parse_integer(&mut self) -> Result<Node, ParserError> {
+  fn parse_integer(&mut self) -> Result<Node, IvyError> {
     if let Some(tok) = self.next() {
       match tok.typ {
         TokenType::Integer(_) => Ok(NewAtom(tok)),
@@ -1305,7 +1306,6 @@ macro_rules! consume_token {
       _ => {
         let (r, c) = $self.get_last_token_location();
         return Err(new_parser_expected(r, c + 1, format!("{}", $token)))
-        // Err( new_parser_expected(0,0, format!("{}", $token)) )
       }
     }
   };

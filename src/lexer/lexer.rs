@@ -58,14 +58,15 @@ fn match_keyword(word: String) -> TokenType {
 pub fn lex(src: &str, filename: &str) -> Option<Vec<Token>> {
   match lex_(src) {
     Ok(tokens) => Some(tokens),
-    Err(err) => {
-      err.show_error(src, filename);
+    Err(mut err) => {
+      err.enrich(filename, src);
+      print!("{}", err);
       None
     }
   }
 }
 
-fn lex_(src: &str) -> Result<Vec<Token>, LexerError> {
+fn lex_(src: &str) -> Result<Vec<Token>, IvyError> {
   let (mut row, mut col, mut peek_ptr) = (1, 1, 1);
   let mut tokens = Vec::new();
   let mut chars = src.chars().peekable();

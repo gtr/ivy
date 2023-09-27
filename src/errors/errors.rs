@@ -1,6 +1,4 @@
 use std::fmt;
-use crate::lexer::tokens::*;
-// use crate::parser::ast::*;
 
 const VERT: &str        = "│";
 const HRZT: &str        = "─";
@@ -12,155 +10,135 @@ const ERR_END: &str     = "\x1b[0m";
 const LEXER_ERR: &str   = "Lexer error";
 const PARSER_ERR: &str  = "Parser error";
 
-/// Holds the two types of lexer errors.
-enum LexerErrType {
+pub fn new_invalid_token(tok: char, row: usize, col: usize) -> IvyError {
+  IvyError {
+    start: Location { row, col },
+    typ: IvyErrorType::Lexer(LexerError::InvalidToken(tok)),
+    file_name: None,
+    input: None,
+  }
+}
+
+pub fn new_unterminated_str(row: usize, col: usize) -> IvyError {
+  IvyError {
+    start: Location { row, col },
+    typ: IvyErrorType::Lexer(LexerError::UnterminatedString),
+    file_name: None,
+    input: None,
+  }
+}
+
+pub fn new_parser_expected(row: usize, col: usize, val: String) -> IvyError {
+  IvyError {
+    start: Location { row, col }, 
+    typ: IvyErrorType::Parser(ParserError::Expected(val)),
+    file_name: None,
+    input: None,
+  }
+}
+
+pub fn new_parser_expected_one_of(row: usize, col: usize, val: Vec<String>) -> IvyError {
+  IvyError {
+    start: Location { row, col },
+    typ: IvyErrorType::Parser(ParserError::ExpectedOneOf(val)),
+    file_name: None,
+    input: None,
+  }
+}
+
+#[derive(Debug)]
+pub struct Location {
+  row: usize,
+  col: usize,
+}
+
+#[derive(Debug)]
+enum LexerError {
   InvalidToken(char),
   UnterminatedString,
 }
 
-impl fmt::Display for LexerErrType {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let msg = match *self {
-      LexerErrType::UnterminatedString => format!("Unterminated string"),
-      LexerErrType::InvalidToken(car) => format!("Invalid Token: `{car}`"),
-    };
-    write!(f, "{ERR_START}{LEXER_ERR}{ERR_END}: {msg}")
-  }
-}
-
-/// Holds the two types of parser errors.
 #[derive(Debug)]
-enum ParserErrType {
+enum ParserError {
   Expected(String),
-  ExpecetedOneOf(Vec<String>),
+  ExpectedOneOf(Vec<String>),
 }
-
-impl fmt::Display for ParserErrType {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    let msg = match self {
-      ParserErrType::Expected(car) => format!("Expected {}", car.clone()),
-      ParserErrType::ExpecetedOneOf(car) => {
-        let mut comma = false;
-        let mut one_of = String::new();
-        for tok in car {
-          if comma {
-            one_of += ", ";
-          }
-          one_of += &tok;
-          comma = true;
-        }
-        format!("Expected one of: {one_of}")
-      },
-    };
-    write!(f, "{ERR_START}{PARSER_ERR}{ERR_END}: {msg}")
-  }
-}
-
-pub struct LexerError {
-  row: usize,
-  col: usize,
-  typ: LexerErrType,
-}
-
-/// Creates a LexerError struct for an invalid token error.
-pub fn new_invalid_token(tok: char, row: usize, col: usize) -> LexerError {
-  LexerError { row, col, typ: LexerErrType::InvalidToken(tok) }
-}
-
-/// Creates a LexerError struct for an untermianted string error.
-pub fn new_unterminated_str(row: usize, col: usize) -> LexerError {
-  LexerError { row, col, typ: LexerErrType::UnterminatedString }
-}
-
 
 #[derive(Debug)]
-pub struct ParserError {
-  row: usize,
-  col: usize,
-  typ: ParserErrType,
+enum IvyErrorType {
+  Lexer(LexerError),
+  Parser(ParserError),
 }
 
-pub fn new_parser_expected(row: usize, col: usize, val: String) -> ParserError {
-  ParserError { row, col, typ: ParserErrType::Expected(val) }
-}
-
-pub fn new_parser_expected_one_of(
-  row: usize, col: usize, val: Vec<String>
-) -> ParserError {
-  ParserError { row, col, typ: ParserErrType::ExpecetedOneOf(val) }
-}
-
-impl LexerError {
-  pub fn show_error(&self, src: &str, input: &str) {
-    let padding = get_padding(self.row);
-
-    self.show_error_title();
-    self.show_error_source(input, padding);
-    self.show_code_snippet(padding, src);
+impl fmt::Display for IvyErrorType {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      IvyErrorType::Lexer(err) => write!(f, "{ERR_START}{LEXER_ERR}{ERR_END}: {}", err),
+      IvyErrorType::Parser(err) => write!(f, "{ERR_START}{PARSER_ERR}{ERR_END}: {}", err),
+    }
   }
+}
 
-  fn show_error_title(&self) {
-    let title = format!("{}", self.typ);
-    println!("\n{title}");
+impl fmt::Display for LexerError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      LexerError::InvalidToken(token) => write!(f, "Invalid Token: `{}`", token),
+      LexerError::UnterminatedString => write!(f, "Unterminated string"),
+    }
   }
+}
 
-  fn show_error_source(&self, input: &str, padding: usize) {
+impl fmt::Display for ParserError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    match self {
+      ParserError::Expected(token) => write!(f, "Expected {}", token),
+      ParserError::ExpectedOneOf(token) => {
+        let one_of = token.join(", ");
+        write!(f, "Expected one of: {}", one_of)
+      },
+    }
+  }
+}
+
+#[derive(Debug)]
+pub struct IvyError {
+  input: Option<String>,
+  file_name: Option<String>,
+  start: Location,
+  typ: IvyErrorType,
+}
+
+impl IvyError {
+  pub fn enrich(&mut self, file_name: &str, input: &str) {
+    self.input = Some(input.to_string());
+    self.file_name = Some(file_name.to_string());
+  }
+}
+
+impl fmt::Display for IvyError {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    let padding = get_padding(self.start.row);
     let indent = " ".repeat(padding);
-    let (row, col) = (self.row, self.col);
-    print!("{indent}{ERR_START}{DOWN_RIGHT}{HRZT}{HRZT}[");
-    println!("{input} ({row}:{col})]{ERR_END}")
-  }
-
-  fn show_code_snippet(&self, padding: usize, src: &str) {
-    let indent = " ".repeat(padding);
-    let arrow_offset = " ".repeat(self.col);
+    let (row, col) = (self.start.row, self.start.col);
+    let line = get_line(self.input.clone().unwrap(), row);
+    let file_name = self.file_name.as_ref().unwrap();
+    let arrow_offset = " ".repeat(col);
     let left_bars = "─".repeat(padding);
-    let row = self.row;
-    let line = get_line(src, self.row);
-    println!("{indent}{ERR_START}{VERT}{ERR_END}");
-    println!(" {ERR_START}{row}{VERT} {ERR_END}{line}");
-    println!("{indent}{ERR_START}{VERT}{arrow_offset}^");
-    println!("{ERR_START}{left_bars}{UP_LEFT}");
 
-    println!("{ERR_END}");
+    let mut output = String::new();
+
+    output += &format!("\n{}\n", self.typ);
+    output += &format!("{indent}{ERR_START}{DOWN_RIGHT}{HRZT}{HRZT}[");
+    output += &format!("{file_name} ({row}:{col})]{ERR_END}\n");
+
+    output += &format!("{indent}{ERR_START}{VERT}{ERR_END}\n");
+    output += &format!(" {ERR_START}{row}{VERT} {ERR_END}{line}\n");
+    output += &format!("{indent}{ERR_START}{VERT}{arrow_offset}^\n");
+    output += &format!("{ERR_START}{left_bars}{UP_LEFT}\n{ERR_END}\n");
+
+
+    write!(f, "{}", output)
   }
-}
-
-
-impl ParserError {
-  pub fn show_error(&self, src: &str, input: &str) {
-    let padding = get_padding(self.row);
-
-    self.show_error_title();
-    self.show_error_source(input, padding);
-    self.show_code_snippet(padding, src);
-  }
-
-  fn show_error_title(&self) {
-    let title = format!("{}", self.typ);
-    println!("\n{title}");
-  }
-
-  fn show_error_source(&self, input: &str, padding: usize) {
-    let indent = " ".repeat(padding);
-    let (row, col) = (self.row, self.col);
-    print!("{indent}{ERR_START}{DOWN_RIGHT}{HRZT}{HRZT}[");
-    println!("{input} ({row}:{col})]{ERR_END}")
-  }
-
-  fn show_code_snippet(&self, padding: usize, src: &str) {
-    let indent = " ".repeat(padding);
-    let arrow_offset = " ".repeat(self.col);
-    let left_bars = "─".repeat(padding);
-    let row = self.row;
-    let line = get_line(src, self.row);
-    println!("{indent}{ERR_START}{VERT}{ERR_END}");
-    println!(" {ERR_START}{row}{VERT} {ERR_END}{line}");
-    println!("{indent}{ERR_START}{VERT}{arrow_offset}^");
-    println!("{ERR_START}{left_bars}{UP_LEFT}");
-
-    println!("{ERR_END}");
-  }   
 }
 
 /// Returns the number of characters a row number takes up.
@@ -175,28 +153,6 @@ fn get_padding(row: usize) -> usize {
   1 + get_line_size(row)
 }
 
-fn get_line(src: &str, row: usize) -> String {
-  let mut line = String::new();
-  let acc_row = row - 1;
-  let mut cur_row = 0;
-  let mut ptr = 0;
-
-  while acc_row != cur_row {
-    if src.chars().nth(ptr) == Some('\n') {
-      cur_row += 1;
-    }
-    ptr += 1;
-  }
-
-  let mut ended = false;
-  while !ended {
-    match src.chars().nth(ptr) {
-      Some('\n')  => ended = true,
-      Some(col)   => line.push(col),
-      _           => break,
-    }
-    ptr += 1;
-  }
-
-  return line;
+fn get_line(src: String, row: usize) -> String {
+  src.lines().nth(row - 1).unwrap_or("").to_string()
 }

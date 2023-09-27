@@ -28,14 +28,12 @@ fn open_file(file_name: &String) {
 
   if token_result.is_some() {
     let tokens = token_result.unwrap();
-    // for token in tokens {
-    //     println!("{} ", token);
-    // }
-    // let r = parse(token_result.unwrap());
-    
     let ast = parse(tokens);
     match ast {
-      Err(err) => {err.show_error(&contents, file_name);}
+      Err(mut err) => {
+        err.enrich(&file_name, &contents);
+        print!("{}", err)
+      }
       Ok(root) => {print_tree(root);}
     }
   }
