@@ -80,12 +80,12 @@ pub fn repl() {
           let token_result = lex(&line, REPL);
           if token_result.is_some() {
             let tokens = token_result.unwrap();
-            // for token in tokens {
-            //     println!("{} ", token);
-            // }
             let ast = parse(tokens);
             match ast {
-              Err(err) => {err.show_error(&line, REPL);}
+              Err(mut err) => {
+                err.enrich(REPL, &line);
+                print!("{}", err)
+              }
               Ok(root) => {print_tree(root);}
             }
           }
