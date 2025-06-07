@@ -8,3 +8,15 @@ edition = "2021"
 [dependencies]
 rustyline = "9.1.0"
 colored = "2"
+
+[workspace]
+resolver = "2"
+members = [
+  "ivy-syntax",
+]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2021"
+license = "GPL-3.0"
+authors = ["Gerardo Torres Castro"]
