@@ -1,0 +1,177 @@
+use crate::ast::Ident;
+use crate::expr::{Expr, Param};
+use crate::pattern::Pattern;
+use crate::span::{Span, Spanned};
+use crate::types::TypeExpr;
+
+#[derive(Debug, Clone)]
+pub enum Decl {
+    Module { name: Ident },
+
+    Import {
+        path: Vec<Ident>,
+        items: Option<Vec<Ident>>,
+    },
+
+    /// Type definition: `type Option<a> = | None | Some(a);`
+    Type {
+        is_pub: bool,
+        name: Ident,
+        params: Vec<Ident>,
+        body: TypeBody,
+    },
+
+    /// Trait definition: `trait Show<a> { ... }`
+    Trait {
+        name: Ident,
+        param: Ident,
+        items: Vec<TraitItem>,
+    },
+
+    /// Implementation: `impl Show for Int { ... }`
+    Impl {
+        trait_name: Ident,
+        for_type: Spanned<TypeExpr>,
+        where_clause: Vec<Constraint>,
+        methods: Vec<Spanned<FnDecl>>,
+    },
+
+    /// Let binding (top-level): `let x = 42;`
+    Let {
+        is_pub: bool,
+        is_mut: bool,
+        pattern: Spanned<Pattern>,
+        ty: Option<Spanned<TypeExpr>>,
+        value: Spanned<Expr>,
+    },
+
+    /// Function declaration: `fn add(x, y) => x + y;`
+    Fn(FnDecl),
+}
+
+#[derive(Debug, Clone)]
+pub struct FnDecl {
+    pub is_pub: bool,
+    pub name: Ident,
+    pub params: Vec<Param>,
+    pub return_ty: Option<Spanned<TypeExpr>>,
+    pub body: FnBody,
+    pub span: Span,
+}
+
+impl FnDecl {
+    pub fn new(
+        is_pub: bool,
+        name: Ident,
+        params: Vec<Param>,
+        return_ty: Option<Spanned<TypeExpr>>,
+        body: FnBody,
+        span: Span,
+    ) -> Self {
+        Self {
+            is_pub,
+            name,
+            params,
+            return_ty,
+            body,
+            span,
+        }
+    }
+}
+
+/// Function body - either simple expression or guarded clauses.
+#[derive(Debug, Clone)]
+pub enum FnBody {
+    /// Simple: => expr
+    Expr(Spanned<Expr>),
+    /// Guarded: | cond1 => expr1 | cond2 => expr2
+    Guards(Vec<GuardedExpr>),
+}
+
+/// A guarded expression: | condition => result
+#[derive(Debug, Clone)]
+pub struct GuardedExpr {
+    pub guard: Spanned<Expr>,
+    pub body: Spanned<Expr>,
+    pub span: Span,
+}
+
+impl GuardedExpr {
+    pub fn new(guard: Spanned<Expr>, body: Spanned<Expr>, span: Span) -> Self {
+        Self { guard, body, span }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TypeBody {
+    /// Sum type: | None | Some(a)
+    Sum(Vec<Variant>),
+    /// Record type: { name: String, age: Int }
+    Record(Vec<RecordField>),
+}
+
+/// Sum type variant: None or Some(a)
+#[derive(Debug, Clone)]
+pub struct Variant {
+    pub name: Ident,
+    pub fields: Vec<Spanned<TypeExpr>>,
+    pub span: Span,
+}
+
+impl Variant {
+    pub fn new(name: Ident, fields: Vec<Spanned<TypeExpr>>, span: Span) -> Self {
+        Self { name, fields, span }
+    }
+
+    pub fn unit(name: Ident, span: Span) -> Self {
+        Self {
+            name,
+            fields: Vec::new(),
+            span,
+        }
+    }
+}
+
+/// Record field: name: Type
+#[derive(Debug, Clone)]
+pub struct RecordField {
+    /// The field name.
+    pub name: Ident,
+    pub ty: Spanned<TypeExpr>,
+    pub span: Span,
+}
+
+impl RecordField {
+    pub fn new(name: Ident, ty: Spanned<TypeExpr>, span: Span) -> Self {
+        Self { name, ty, span }
+    }
+}
+
+/// Trait item: signature or default impl.
+/// TODO(gtr): not fully fleshed out yet
+#[derive(Debug, Clone)]
+pub enum TraitItem {
+    Signature {
+        name: Ident,
+        ty: Spanned<TypeExpr>,
+        span: Span,
+    },
+    DefaultImpl(FnDecl),
+}
+
+#[derive(Debug, Clone)]
+pub struct Constraint {
+    pub trait_name: Ident,
+    pub type_arg: Ident,
+    pub span: Span,
+}
+
+impl Constraint {
+    pub fn new(trait_name: Ident, type_arg: Ident, span: Span) -> Self {
+        Self {
+            trait_name,
+            type_arg,
+            span,
+        }
+    }
+}

@@ -13,6 +13,7 @@ colored = "2"
 resolver = "2"
 members = [
   "ivy-syntax",
+  "ivy-parse",
 ]
 
 [workspace.package]
@@ -20,3 +21,9 @@ version = "0.2.0"
 edition = "2021"
 license = "GPL-3.0"
 authors = ["Gerardo Torres Castro"]
+
+[workspace.dependencies]
+ivy-syntax = { path = "ivy-syntax" }
+ivy-parse = { path = "ivy-parse" }
+thiserror = "2"
+miette = { version = "7", features = ["fancy"] }

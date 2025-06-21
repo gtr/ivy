@@ -1,4 +1,27 @@
-use crate::span::Span;
+use crate::decl::Decl;
+use crate::span::{Span, Spanned};
+
+/// A complete Ivy program.
+#[derive(Debug, Clone)]
+pub struct Program {
+    pub declarations: Vec<Spanned<Decl>>,
+    pub span: Span,
+}
+
+impl Program {
+    /// Create a new program.
+    pub fn new(declarations: Vec<Spanned<Decl>>, span: Span) -> Self {
+        Self { declarations, span }
+    }
+
+    /// Create an empty program.
+    pub fn empty() -> Self {
+        Self {
+            declarations: Vec::new(),
+            span: Span::point(0),
+        }
+    }
+}
 
 /// An identifier (variable or type name).
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

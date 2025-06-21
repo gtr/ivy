@@ -1,0 +1,12 @@
+[package]
+name = "ivy-parse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Lexer and parser for the Ivy programming language"
+
+[dependencies]
+ivy-syntax.workspace = true
+thiserror.workspace = true
+miette.workspace = true
