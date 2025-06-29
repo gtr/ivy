@@ -14,6 +14,7 @@ resolver = "2"
 members = [
   "ivy-syntax",
   "ivy-parse",
+  "ivy-eval",
 ]
 
 [workspace.package]
@@ -25,5 +26,7 @@ authors = ["Gerardo Torres Castro"]
 [workspace.dependencies]
 ivy-syntax = { path = "ivy-syntax" }
 ivy-parse = { path = "ivy-parse" }
+ivy-eval = { path = "ivy-eval" }
 thiserror = "2"
 miette = { version = "7", features = ["fancy"] }
+rand = "0.8"
