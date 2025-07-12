@@ -8,6 +8,8 @@ mod error;
 mod eval;
 mod loader;
 mod pattern;
+#[cfg(test)]
+mod tests;
 mod value;
 
 pub use env::Env;
