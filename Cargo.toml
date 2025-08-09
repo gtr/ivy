@@ -1,14 +1,3 @@
-[package]
-name = "ivy"
-version = "0.1.0"
-edition = "2021"
-
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-rustyline = "9.1.0"
-colored = "2"
-
 [workspace]
 resolver = "2"
 members = [
@@ -16,6 +5,7 @@ members = [
   "ivy-parse",
   "ivy-types",
   "ivy-eval",
+  "ivy",
 ]
 
 [workspace.package]
@@ -31,4 +21,6 @@ ivy-types = { path = "ivy-types" }
 ivy-eval = { path = "ivy-eval" }
 thiserror = "2"
 miette = { version = "7", features = ["fancy"] }
+colored = "2"
+rustyline = "14"
 rand = "0.8"
