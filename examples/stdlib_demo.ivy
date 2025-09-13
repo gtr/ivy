@@ -1,0 +1,62 @@
+-- Demo of Ivy stdlib functions
+
+-- String operations
+let text = "  Hello, World!  ";
+println("Original: '" ++ text ++ "'");
+println("Length: " ++ show(strLength(text)));
+println("Trimmed: '" ++ strTrim(text) ++ "'");
+println("Uppercase: " ++ strToUpper(strTrim(text)));
+println("Lowercase: " ++ strToLower(strTrim(text)));
+
+let sentence = "the quick brown fox";
+println("\nSentence: " ++ sentence);
+println("Contains 'quick': " ++ show(strContains(sentence, "quick")));
+println("Contains 'slow': " ++ show(strContains(sentence, "slow")));
+println("Starts with 'the': " ++ show(strStartsWith(sentence, "the")));
+println("Ends with 'fox': " ++ show(strEndsWith(sentence, "fox")));
+println("Replace 'quick' with 'lazy': " ++ strReplace(sentence, "quick", "lazy"));
+
+-- String split
+let csv = "apple,banana,cherry";
+println("\nCSV: " ++ csv);
+let fruits = strSplit(csv, ",");
+println("Split result:");
+println(fruits);
+
+-- Substring
+let hello = "Hello, World!";
+println("\nSubstring of '" ++ hello ++ "' from 0 to 5:");
+println(strSubstring(hello, 0, 5));
+
+-- File I/O demo
+println("\n--- File I/O Demo ---");
+let content = "Hello from Ivy!\nThis is a test file.\n";
+writeFile("/tmp/ivy_test.txt", content);
+println("Wrote to /tmp/ivy_test.txt");
+
+if fileExists("/tmp/ivy_test.txt") then
+  println("File exists!")
+else
+  println("File doesn't exist");
+
+let read_content = readFile("/tmp/ivy_test.txt");
+println("Read from file:");
+println(read_content);
+
+appendFile("/tmp/ivy_test.txt", "Appended line\n");
+println("\nAfter appending:");
+println(readFile("/tmp/ivy_test.txt"));
+
+-- Math functions demo
+println("\n--- Math Demo ---");
+println("abs(-42) = " ++ show(abs(-42)));
+println("min(10, 20) = " ++ show(min(10, 20)));
+println("max(10, 20) = " ++ show(max(10, 20)));
+println("pow(2, 10) = " ++ show(pow(2, 10)));
+println("sqrt(16) = " ++ show(sqrt(16)));
+println("floor(3.7) = " ++ show(floor(3.7)));
+println("ceil(3.2) = " ++ show(ceil(3.2)));
+println("round(3.5) = " ++ show(round(3.5)));
+println("random(1, 10) = " ++ show(random(1, 10)));
+
+println("\nStdlib demo complete!");

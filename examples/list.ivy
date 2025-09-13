@@ -1,35 +1,48 @@
+-- Lists in Ivy are homogeneous and support pattern matching.
 
--- -- In ivy, lists can be nested and contain any type.
--- let my_list = ["one" 2 "three" 3 ["five" 6 "seven"] [8 ["nine"]]];
+-- A simple list of integers.
+let numbers = [1, 2, 3, 4, 5];
 
--- -- Prints the list.
--- println(my_list);
+-- Compute the length of a list using pattern matching.
+fn length([]) => 0;
+fn length([_ :: tail]) => 1 + length(tail);
 
--- -- They can also be pattern-matched! Let's define a function that returns the 
--- -- length of a list.
--- let length = fn ([]) -> 0;
--- let length = fn ([head tail]) -> 1 + length(tail);
+println("Length: " ++ show(length(numbers)));
 
+-- Sum all elements in a list.
+fn sum([]) => 0;
+fn sum([head :: tail]) => head + sum(tail);
 
--- do {
---     return [
---         [1, 2 ,3],
---         [3, 5, 6],
---         [7, 8, 9]
---     ];
--- };
+println("Sum: " ++ show(sum(numbers)));
 
--- [
---     0,0,0,0,0
--- ];
+-- Map a function over a list.
+fn map(f, []) => [];
+fn map(f, [head :: tail]) => f(head) :: map(f, tail);
 
+let doubled = map(fn (x) => x * 2, numbers);
+println("Doubled: " ++ show(doubled));
 
+-- Filter a list based on a predicate.
+fn filter(pred, []) => [];
+fn filter(pred, [head :: tail]) =>
+  if pred(head)
+  then head :: filter(pred, tail)
+  else filter(pred, tail);
 
-data Tree<A> (
-    | Empty
-    | Node :: (A, Tree<A>, Tree<A>)
-);
+let evens = filter(fn (x) => x % 2 == 0, numbers);
+println("Evens: " ++ show(evens));
 
+-- A generic binary tree type.
+type Tree<a> =
+| Empty
+| Node(a, Tree<a>, Tree<a>)
+;
 
+-- Create a simple tree.
+let tree = Node(1, Node(2, Empty, Empty), Node(3, Empty, Empty));
 
--- value :: Result<Node, ParserError>;
+-- Count nodes in a tree.
+fn countNodes(Empty) => 0;
+fn countNodes(Node(_, left, right)) => 1 + countNodes(left) + countNodes(right);
+
+println("Tree nodes: " ++ show(countNodes(tree)));

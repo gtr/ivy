@@ -1,0 +1,4 @@
+import Math;
+
+-- This should fail because helper is private
+println(show(Math.helper(5)));

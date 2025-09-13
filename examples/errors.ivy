@@ -1,139 +1,47 @@
-
-
-
-
-
-
-// 3 + 3
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-let sq = fn(x)  r * r;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// 3 + 3
-
-
-
-
-
-
-
-
+-- Error handling in Ivy uses the Result type.
+-- No exceptions - errors are values that must be handled.
+
+type ParseError =
+| InvalidNumber(String)
+| UnexpectedChar(Char)
+| EndOfInput
+;
+
+-- A function that might fail.
+fn parseDigit(c: Char): Result<Int, ParseError> =>
+  if c == '0' then Ok(0)
+  else if c == '1' then Ok(1)
+  else if c == '2' then Ok(2)
+  else if c == '3' then Ok(3)
+  else if c == '4' then Ok(4)
+  else if c == '5' then Ok(5)
+  else if c == '6' then Ok(6)
+  else if c == '7' then Ok(7)
+  else if c == '8' then Ok(8)
+  else if c == '9' then Ok(9)
+  else Err(UnexpectedChar(c));
+
+-- Using Result with pattern matching.
+fn showResult(r: Result<Int, ParseError>): String => match r with
+| Ok(n) -> "Parsed: " ++ show(n)
+| Err(InvalidNumber(s)) -> "Invalid number: " ++ s
+| Err(UnexpectedChar(c)) -> "Unexpected character: " ++ show(c)
+| Err(EndOfInput) -> "Unexpected end of input"
+end;
+
+-- Test it
+println(showResult(parseDigit('5')));
+println(showResult(parseDigit('x')));
+
+-- Chaining results with match.
+fn parseTwo(a: Char, b: Char): Result<Int, ParseError> =>
+  match parseDigit(a) with
+  | Err(e) -> Err(e)
+  | Ok(x) -> match parseDigit(b) with
+    | Err(e) -> Err(e)
+    | Ok(y) -> Ok(x * 10 + y)
+    end
+  end;
+
+println(showResult(parseTwo('4', '2')));
+println(showResult(parseTwo('4', 'x')));

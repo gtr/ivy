@@ -1,22 +1,33 @@
+-- Pattern matching in function definitions.
+-- Multiple definitions with different patterns are tried in order.
 
--- One way to express a factorial function.
-let factorial = fn (0) => 1;
-let factorial = fn (x) => x * fact(x);
+fn factorial(0) => 1;
+fn factorial(1) => 1;
+fn factorial(n) => n * factorial(n - 1);
 
--- Another way!
-let factorial = fn (x) => match (x) (
-    | 0 -> 1
-    | x -> x * factorial(x)
-);
+-- Alternative: using a match expression.
+fn factorial2(x) => match x with
+| 0 -> 1
+| n -> n * factorial2(n - 1)
+end;
 
-match (woah) (
-    | 1 -> "January"
-    | 2 -> "February"
-    | 3 -> "March"
-    | 4 -> "April"
-    | 5 -> "May"
-);
+-- Match expressions can be used anywhere.
+fn monthName(n) => match n with
+| 1 -> "January"
+| 2 -> "February"
+| 3 -> "March"
+| 4 -> "April"
+| 5 -> "May"
+| 6 -> "June"
+| 7 -> "July"
+| 8 -> "August"
+| 9 -> "September"
+| 10 -> "October"
+| 11 -> "November"
+| 12 -> "December"
+| _ -> "Unknown"
+end;
 
--- Call the function
-factorial(12);
-
+-- Call the functions
+println(factorial(12));
+println(monthName(3));

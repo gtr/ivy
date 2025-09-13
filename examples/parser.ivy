@@ -1,62 +1,97 @@
+{-
+  FUTURE DEMO - Requires Phase 8+ (Float type)
 
+  This example demonstrates a parser token type but uses the Float type
+  which is not yet implemented. Float support is planned for a future phase.
+-}
 
+-- Example: A simple token type for a parser.
+-- Demonstrates sum types with payloads.
 
-pub data TokenType (
-    -- Atoms
-    | Integer :: i32    (- 42 -)
-    | String  :: String (- "here" -)
-    | Symbol  :: String (- user-defined -)
-    | None              (- None -)
+pub type TokenType =
+| Integer(Int)
+| Float(Float)
+| String(String)
+| Symbol(String)
+| True
+| False
 
-    -- Operators
-    | Plus           (- +  -)    | Minus      (- -  -)
-    | Comment        (- -  -)    | Star       (- *  -)
-    | Slash          (- /  -)    | Bind       (- =  -)
-    | Eq             (- == -)    | Not        (- !  -)
-    | NotEq          (- != -)    | Greater    (- >  -)
-    | GreaterEqual   (- >= -)    | Less       (- <  -)
-    | LessEqual      (- <= -)    | And        (- && -)
-    | Or             (- || -)
+-- Operators
+| Plus
+| Minus
+| Star
+| Slash
+| Equal
+| NotEqual
+| Less
+| LessEqual
+| Greater
+| GreaterEqual
+| And
+| Or
+| Not
 
-    -- Delimeters
-    | Bar            (-  |  -)  | Arrow          (-  -> -)
-    | EqArrow        (-  => -)  | Dot            (-  .  -)
-    | Comma          (-    -)   | Colon          (-  :  -)
-    | Semicolon      (-  ;  -)  | DoubleColon    (-  :: -)
-    | LParen         (-  (  -)  | RParen         (-  )  -)
-    | LBracket       (-  [  -)  | RBracket       (-  ]  -)
-    | LCurly         (-  {  -)  | RCurly         (-  }  -)
-    | CommentLeft    (-   -)    | CommentRight   (-    -)
+-- Delimiters
+| LParen
+| RParen
+| LBracket
+| RBracket
+| LBrace
+| RBrace
+| Comma
+| Colon
+| Semicolon
+| Arrow
+| FatArrow
+| Pipe
+| Dot
 
-    -- Keywords
-    | Let            (- let     -)   | Mut        (- mut     -)
-    | Fn             (- fn      -)   | If         (- if      -)
-    | Then           (- then    -)   | Else       (- else    -)
-    | Pub            (- pub     -)   | Data       (- data    -)
-    | Struct         (- struct  -)   | Package    (- package -)
-    | Import         (- import  -)   | Match      (- match   -)
-    | While          (- while   -)   | Do         (- do      -)
-    | Return         (- return  -)
+-- Keywords
+| Let
+| Mut
+| Fn
+| If
+| Then
+| Else
+| Match
+| With
+| End
+| Type
+| Trait
+| Impl
+| Pub
+| Import
+| Module
 
-    | EOF            (- end of file -)
-);
+| EOF
+;
 
--- Token
-struct Token (
-    col :: Int,
-    row :: Int,
-    typ :: TokenType
-);
-
--- Parser
-struct Parser (
-    tokens :: [Token],
-    cursor :: Int
-);
-
-fn Parse(tokens) => do {
-    let mut p = parser(4) ;
-    
-    
+-- A token with position information.
+type Token = {
+  line: Int,
+  column: Int,
+  tokenType: TokenType
 };
 
+-- Create a token.
+fn makeToken(line: Int, col: Int, typ: TokenType): Token =>
+  Token { line: line, column: col, tokenType: typ };
+
+-- Check if a token is a keyword.
+fn isKeyword?(token: Token): Bool => match token.tokenType with
+| Let -> true
+| Mut -> true
+| Fn -> true
+| If -> true
+| Then -> true
+| Else -> true
+| Match -> true
+| With -> true
+| End -> true
+| Type -> true
+| _ -> false
+end;
+
+-- Example usage
+let tok = makeToken(1, 5, Let);
+println("Is keyword: " ++ show(isKeyword?(tok)));
