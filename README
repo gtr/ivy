@@ -1,0 +1,30 @@
+the ivy programming language
+----------------------------
+
+a statically typed functional programming language with hindley-milner type inference, written in rust.
+
+```
+  _
+ (_)_   ___   _
+ | \ \ / / | | |
+ | |\ V /| |_| |
+ |_| \_/  \__, |
+          |___/  v0.2
+
+Ivy - the friendly functional programming language
+Type :help for commands, :q to quit
+
+ivy> :help
+Ivy REPL Commands:
+
+  :help, :h          Show this help message
+  :quit, :q          Exit the REPL
+  :reset, :r         Reset interpreter state (clear all definitions)
+  :load <path>, :l   Load and execute a file
+  :type <expr>, :t   Show the inferred type of an expression
+  :env               Show all defined names in current scope
+
+Multi-line input is supported. The REPL will continue prompting
+with '...>' when it detects unclosed brackets or expressions.
+```
+
