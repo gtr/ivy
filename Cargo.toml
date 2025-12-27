@@ -1,10 +1,26 @@
-[package]
-name = "ivy"
-version = "0.1.0"
+[workspace]
+resolver = "2"
+members = [
+  "ivy-syntax",
+  "ivy-parse",
+  "ivy-types",
+  "ivy-eval",
+  "ivy",
+]
+
+[workspace.package]
+version = "0.2.0"
 edition = "2021"
+license = "GPL-3.0"
+authors = ["Gerardo Torres Castro"]
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-[dependencies]
-rustyline = "9.1.0"
+[workspace.dependencies]
+ivy-syntax = { path = "ivy-syntax" }
+ivy-parse = { path = "ivy-parse" }
+ivy-types = { path = "ivy-types" }
+ivy-eval = { path = "ivy-eval" }
+thiserror = "2"
+miette = { version = "7", features = ["fancy"] }
 colored = "2"
+rustyline = "14"
+rand = "0.8"

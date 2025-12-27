@@ -1,0 +1,11 @@
+[package]
+name = "ivy-types"
+version = "0.1.0"
+edition = "2021"
+description = "Type system for the Ivy programming language"
+
+[dependencies]
+ivy-syntax = { path = "../ivy-syntax" }
+
+[dev-dependencies]
+ivy-parse = { path = "../ivy-parse" }

@@ -1,0 +1,4 @@
+import Math;
+
+println(show(Math.add(1, 2)));
+println(show(Math.sub(5, 3)));

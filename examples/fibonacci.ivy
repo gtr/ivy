@@ -1,33 +1,19 @@
+-- Ivy supports pattern matching in function definitions.
+-- This is especially useful for recursive functions.
 
--- Ivy supports pattern-matching for function definitions. This is especially 
--- useful for recursive functions.
+-- The function "fib" maps 0 to 0 and 1 to 1 (base cases).
+fn fib(0) => 0;
+fn fib(1) => 1;
 
--- For example, if we take a look at the two function definitions for "fib" 
--- below, we are telling ivy that the function "fib" should map an input of 
--- integer 0 to an output of integer 0. Similarly, the function "fib" should 
--- also map an input of integer 1 to an output of integer 1. 
-let fib = fn(0) => 0;   -- Base case
-let fib = fn(1) => 1;   -- Base case
+-- For any other n, we compute fib(n-1) + fib(n-2).
+fn fib(n) => fib(n - 1) + fib(n - 2);
 
--- Finally, in the third case, we say that the function "fib" should map a 
--- variable "n" to the expression to the right of the arrow:
---          "fib(n - 2) + fib(n - 1)"
--- which completes the recursive defintion for "fib". 
-let fib = fn(n) => fib(n - 2) + fib(n - 1); -- Recursive case
-
--- For recursive definitions in ivy, We must define the input and outputs for 
--- the base cases before the recursive cases because the input for the function
--- gets compared to the inputs in the order in which they were defined. If we 
--- defined the recursive case first, the function would never end since it'll 
--- always match to "n" before any of the 0 or 1 cases.
+-- Base cases must be defined before recursive cases because patterns
+-- are matched in definition order. If we defined the recursive case
+-- first, it would always match (since n matches anything).
 
 let a = fib(6);
 let b = fib(3);
 
--- Prints "fib(6) = 8"
--- println("fib(6) = ", a);
-
-print(1);
-
--- Prints "fib(3) = 2".
--- println("fib(3) = ", b);
+println("fib(6) = " ++ show(a));
+println("fib(3) = " ++ show(b));

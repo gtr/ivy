@@ -1,126 +1,159 @@
-
--------------------------------------------------------------------------------
---
--- Package      : bst
--- Author       : Gerardo Torres Castro
--- Date         : Septermber 2, 2022
--- License      : GNU Public License
---
--- T generic implementation of a binary search tree. 
---
-------------------------------------------------------------------------------
-
-package bst;
-
--- --------------------------------------------------------
--- Tree data type definition and trait implementations
--- --------------------------------------------------------
-
---- Tree is a generic binary search tree. It is a data type which can come in 
---- one of two varieties: a `Leaf`, which does not contain any further data; 
---- and a `Node` which is defined as a struct which takes a value of type `T`,
---- and two children, each of type `Tree<T>`. 
-data Tree<T> (
-    | Leaf 
-    | Node :: struct (
-        value :: T,
-        left  :: Tree<T>,
-        right :: Tree<T>
-    )
-);
-
---- Implements the `Equal` Trait for a Binary Tree. It relies on the assumption
---- that the `value :: T` field also has an implementation for the Equal trait. It will
---- allow you to write the following:
+--- FUTURE MODULE (Requires Traits)
 ---
----     > let tree1 = Node("b", singleton("a"), singleton("c"));
----     > let tree2 = Node("b", singleton("a"), singleton("c"));
----     > :t tree1
----     tree1 :: Tree<String>
----     > tree1 == tree2
----     True;
+--- Binary Search Tree
 ---
-impl Equal for Tree<T> (
-    fn __==__ :: (Tree<T>, Tree<T>) -> Bool;
-    fn __==__ (Leaf, Leaf)   => True ;
-    fn __==__ (Leaf, ____)   => False ;
-    fn __==__ (____, Leaf)   => False ;
-    fn __==__ (left, right)  => 
-        if __==__(left.value, right.value) 
-        then __==__(left.left, right.left) && __==__(left.right, right.right) 
-        else False;
-);
-
---- Show Trait for a Binary Tree. It relies on the assumption that the 
---- `value :: T` field also has an implementation for the Show trait. 
---- Example:
+--- A generic binary search tree implementation demonstrating
+--- Ivy's type system, pattern matching, and traits.
 ---
----     > let tree = Node(2, singleton(1), singleton(2))
----     > println(tree);
----     <Node: 2, <Node: 1>, <Node: 3>>
---- 
-impl Show for Tree<T> (
-    fn __show__                         :: Tree<T> -> String
-    fn __show__ (Leaf)                  => "<Leaf>";
-    fn __show__ (Node(val, Leaf, Leaf)) => "<Node: " + __show__(val) + ">";
-    fn __show__ (Node(val, l, Leaf))    => 
-        "<Node: " + __show__(val) + ", "    + __show__(r) + ", _>";
-    fn __show__ (Node(val, Leaf, r))    => 
-        "<Node: " + __show__(val) + ", _, " + __show__(r) + ">";
-    fn __show__ (Node(val, l, r))       => 
-        "<Node: " + __show__(val) + ", "    + __show__(l) + ", " + __show__(r) + ">";
-);
+--- This module requires the Ord trait for BST operations (compare, gt, lt, max).
 
--- --------------------------------------------------------
--- Tree methods
--- --------------------------------------------------------
 
---- Returns a single Node initialized with a given value and no children.
-pub fn singleton :: T -> Tree ;
-pub fn singleton (value) => Node(value, Leaf, Leaf);
+module BinaryTree;
 
---- Determines if the given tree is a binary search tree, i.e. for all nodes in
---- the binary tree, the values to the left of the current node are less than 
---- the value of the current node and all the values to the right of the 
---- current node are greater than or equal to the value of the current node.
-pub fn bST? :: Tree -> Bool ;
-pub fn bST? (tree)  => first(bstHelper?(tree));
+-- A binary tree is either empty (Leaf) or a node with a value and two subtrees.
+type Tree<a> =
+| Leaf
+| Node(a, Tree<a>, Tree<a>)
+;
 
-fn bstHelper? :: Tree<A> -> (Bool, A, A) ;
-fn bstHelper? (Leaf) => (True, LARGEST, SMALLEST);
-fn bstHelper? (Node(val, l, r)) => do {
-    let (bool_l, min_l, max_l) = bstHelper?(l);
-    let (bool_r, min_r, max_r) = bstHelper?(r);
+-- =============================================================================
+-- Trait Implementations
+-- =============================================================================
 
-    return match (max_l < val) && (val <= min_r) with (
-        | True  -> (True, min_l, max_r)
-        | False -> (False, min_l, max_r)
-    );
+impl Show for Tree<a> where Show<a> {
+  fn show(Leaf) => "Leaf";
+  fn show(Node(v, Leaf, Leaf)) => "Node(" ++ show(v) ++ ")";
+  fn show(Node(v, l, r)) =>
+    "Node(" ++ show(v) ++ ", " ++ show(l) ++ ", " ++ show(r) ++ ")";
+}
+
+impl Eq for Tree<a> where Eq<a> {
+  fn eq(Leaf, Leaf) => true;
+  fn eq(Node(v1, l1, r1), Node(v2, l2, r2)) =>
+    eq(v1, v2) && eq(l1, l2) && eq(r1, r2);
+  fn eq(_, _) => false;
+}
+
+-- =============================================================================
+-- Construction
+-- =============================================================================
+
+-- Create an empty tree.
+pub fn empty(): Tree<a> => Leaf;
+
+-- Create a tree with a single value.
+pub fn singleton(value: a): Tree<a> => Node(value, Leaf, Leaf);
+
+-- Insert a value into a BST, maintaining the BST property.
+-- Requires Ord trait for comparison.
+pub fn insert(Leaf, value: a): Tree<a> => singleton(value);
+pub fn insert(Node(v, left, right), value: a): Tree<a> =>
+  match compare(value, v) with
+  | Less -> Node(v, insert(left, value), right)
+  | Equal -> Node(v, left, right)  -- No duplicates
+  | Greater -> Node(v, left, insert(right, value))
+  end;
+
+-- Build a BST from a list of values.
+pub fn fromList(values: [a]): Tree<a> =>
+  foldl(insert, Leaf, values);
+
+-- =============================================================================
+-- Queries
+-- =============================================================================
+
+-- Check if a tree is empty.
+pub fn isEmpty?(Leaf): Bool => true;
+pub fn isEmpty?(Node(_, _, _)): Bool => false;
+
+-- Count the number of nodes.
+pub fn size(Leaf): Int => 0;
+pub fn size(Node(_, left, right)): Int => 1 + size(left) + size(right);
+
+-- Get the height of the tree.
+pub fn height(Leaf): Int => 0;
+pub fn height(Node(_, left, right)): Int => 1 + max(height(left), height(right));
+
+-- Check if a value exists in the BST.
+pub fn contains?(Leaf, _: a): Bool => false;
+pub fn contains?(Node(v, left, right), value: a): Bool =>
+  match compare(value, v) with
+  | Less -> contains?(left, value)
+  | Equal -> true
+  | Greater -> contains?(right, value)
+  end;
+
+-- Find the minimum value (leftmost).
+pub fn minimum(Leaf): Option<a> => None;
+pub fn minimum(Node(v, Leaf, _)): Option<a> => Some(v);
+pub fn minimum(Node(_, left, _)): Option<a> => minimum(left);
+
+-- Find the maximum value (rightmost).
+pub fn maximum(Leaf): Option<a> => None;
+pub fn maximum(Node(v, _, Leaf)): Option<a> => Some(v);
+pub fn maximum(Node(_, _, right)): Option<a> => maximum(right);
+
+-- =============================================================================
+-- Traversals
+-- =============================================================================
+
+-- In-order traversal (left, root, right) - produces sorted order for BST.
+pub fn inorder(Leaf): [a] => [];
+pub fn inorder(Node(v, left, right)): [a] =>
+  inorder(left) ++ [v] ++ inorder(right);
+
+-- Pre-order traversal (root, left, right).
+pub fn preorder(Leaf): [a] => [];
+pub fn preorder(Node(v, left, right)): [a] =>
+  [v] ++ preorder(left) ++ preorder(right);
+
+-- Post-order traversal (left, right, root).
+pub fn postorder(Leaf): [a] => [];
+pub fn postorder(Node(v, left, right)): [a] =>
+  postorder(left) ++ postorder(right) ++ [v];
+
+-- Convert to a sorted list (alias for inorder).
+pub fn toList(tree: Tree<a>): [a] => inorder(tree);
+
+-- =============================================================================
+-- Transformations
+-- =============================================================================
+
+-- Map a function over all values in the tree.
+-- Note: This may invalidate the BST property!
+pub fn map(f: a -> b, Leaf): Tree<b> => Leaf;
+pub fn map(f: a -> b, Node(v, left, right)): Tree<b> =>
+  Node(f(v), map(f, left), map(f, right));
+
+-- Fold over the tree in-order.
+pub fn fold(f: b -> a -> b, acc: b, Leaf): b => acc;
+pub fn fold(f: b -> a -> b, acc: b, Node(v, left, right)): b => do {
+  let acc1 = fold(f, acc, left);
+  let acc2 = f(acc1, v);
+  fold(f, acc2, right)
 };
 
---- Returns a new binary tree with a `value` inserted in the correct place.
-pub fn insert :: (Tree<T>, T) -> Tree<T> ;
-pub fn insert (Leaf, value) => singleton(value);
-pub fn insert (node, value) => match (value, node.value) with (
-    | LT -> Node(node.value, insert(node.left, value), node.right)
-    | EQ -> node
-    | GT -> Node(node.value, node.left, insert(node.right, value))
-);
+-- =============================================================================
+-- BST Validation
+-- =============================================================================
 
---- Determines weather a given `value` exists in the given binary tree.
-pub fn containsValue? :: (Tree<T> , T) -> Bool ;
-pub fn containsValue? (Leaf, value) => False ;
-pub fn containsValue? (node, value) => match __compare__(value, node.value) with (
-    | Less    -> containsValue?(node.left, value)
-    | Equal   -> True
-    | Greater -> containsValue?(node.right, value)
-);
+-- Check if a tree satisfies the BST property.
+pub fn isBST?(tree: Tree<a>): Bool =>
+  isBSTHelper(tree, None, None);
 
---- Given a tree of type `Tree<T>` and a function `func` of type `T -> U`, 
---- treeMap returns a new tree of type `Tree<U>` with all the values in the new
---- tree generated by applying the function `func` to all the values in the old
---- tree. Note that this may mess up the tree's ordered values.
-pub fn treeMap :: (Tree<T>, T -> U) -> Tree<U>;
-pub fn treeMap (Leaf, func) => Leaf;
-pub fn treeMap (Node(value, left, right), func) => 
-    Node(func(value), treeMap(left, func), treeMap(right, func));
+fn isBSTHelper(Leaf, _: Option<a>, _: Option<a>): Bool => true;
+fn isBSTHelper(Node(v, left, right), minBound: Option<a>, maxBound: Option<a>): Bool => do {
+  let aboveMin = match minBound with
+  | None -> true
+  | Some(min) -> gt(v, min)
+  end;
+
+  let belowMax = match maxBound with
+  | None -> true
+  | Some(max) -> lt(v, max)
+  end;
+
+  aboveMin && belowMax &&
+    isBSTHelper(left, minBound, Some(v)) &&
+    isBSTHelper(right, Some(v), maxBound)
+};

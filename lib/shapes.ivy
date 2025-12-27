@@ -1,56 +1,150 @@
 
--- ----------------------------------------------
--- Shapes lol
--- ----------------------------------------------
-
-data Result<A, B> (
-    | Ok  :: A
-    | Err :: B
-);
-
-data Num (
-    | Int
-    | Float
-);
-
-fn square :: Num -> Num;
-fn square (x) => x * x;
-
-fn sqrt :: Int -> Float;
-
-struct Point (
-    x :: Int,
-    y :: Int
-);
-
-data Shape (
-    | Line      :: (Point, Point)
-    | Rectangle :: (Point, Point, Point, Point)
-    | Circle    :: (Point, Int)
-);
-
-data Day (
-    | Monday
-    | Tuesday
-    | Wednesday
-    | Thursday
-    | Friday
-    | Saturday
-    | Sunday
-);
-
-fn wednesday? :: Day -> Bool ;
-fn wednesday (Wednesday) => True;
-fn wednesday (otherwise) => False;
-
-fn next :: Day -> Day ;
-fn next (Monday)    => Tuesday;
-fn next (Tuesday)   => Wednesday;
-fn next (Wednesday) => Thursday;
-fn next (Thursday)  => Friday;
-fn next (Friday)    => Saturday;
-fn next (Saturday)  => Sunday;
-fn next (Sunday)    => Monday;
+-- Shapes
+-- Demonstrates sum types and product types with geometric shapes.
 
 
+module Shapes;
 
+-- =============================================================================
+-- Basic Types
+-- =============================================================================
+
+-- A point in 2D space.
+type Point = {
+  x: Float,
+  y: Float
+};
+
+-- A shape can be one of several variants.
+type Shape =
+| Circle(Point, Float)              -- center, radius
+| Rectangle(Point, Float, Float)    -- top-left corner, width, height
+| Triangle(Point, Point, Point)     -- three vertices
+| Line(Point, Point)                -- start, to
+;
+
+-- =============================================================================
+-- Construction
+-- =============================================================================
+
+pub fn point(x: Float, y: Float): Point => Point { x: x, y: y };
+
+pub fn origin(): Point => point(0.0, 0.0);
+
+pub fn circle(center: Point, radius: Float): Shape => Circle(center, radius);
+
+pub fn rectangle(corner: Point, width: Float, height: Float): Shape =>
+  Rectangle(corner, width, height);
+
+pub fn square(corner: Point, size: Float): Shape =>
+  Rectangle(corner, size, size);
+
+pub fn triangle(a: Point, b: Point, c: Point): Shape => Triangle(a, b, c);
+
+pub fn line(start: Point, to: Point): Shape => Line(start, to);
+
+-- =============================================================================
+-- Calculations
+-- =============================================================================
+
+-- Calculate the area of a shape.
+pub fn area(Circle(_, r)): Float => 3.14159 * r * r;
+pub fn area(Rectangle(_, w, h)): Float => w * h;
+pub fn area(Triangle(a, b, c)): Float => do {
+  -- Using the shoelace formula
+  let x1 = a.x; let y1 = a.y;
+  let x2 = b.x; let y2 = b.y;
+  let x3 = c.x; let y3 = c.y;
+  abs((x1 * (y2 - y3) + x2 * (y3 - y1) + x3 * (y1 - y2)) / 2.0)
+};
+pub fn area(Line(_, _)): Float => 0.0;
+
+-- Calculate the perimeter of a shape.
+pub fn perimeter(Circle(_, r)): Float => 2.0 * 3.14159 * r;
+pub fn perimeter(Rectangle(_, w, h)): Float => 2.0 * (w + h);
+pub fn perimeter(Triangle(a, b, c)): Float =>
+  distance(a, b) + distance(b, c) + distance(c, a);
+pub fn perimeter(Line(start, to)): Float => distance(start, to);
+
+-- Calculate distance between two points.
+pub fn distance(p1: Point, p2: Point): Float => do {
+  let dx = p2.x - p1.x;
+  let dy = p2.y - p1.y;
+  sqrt(dx * dx + dy * dy)
+};
+
+-- =============================================================================
+-- Transformations
+-- =============================================================================
+
+-- Move a point by a given offset.
+pub fn translate(p: Point, dx: Float, dy: Float): Point =>
+  Point { x: p.x + dx, y: p.y + dy };
+
+-- Move a shape by a given offset.
+pub fn moveShape(Circle(c, r), dx: Float, dy: Float): Shape =>
+  Circle(translate(c, dx, dy), r);
+pub fn moveShape(Rectangle(c, w, h), dx: Float, dy: Float): Shape =>
+  Rectangle(translate(c, dx, dy), w, h);
+pub fn moveShape(Triangle(a, b, c), dx: Float, dy: Float): Shape =>
+  Triangle(translate(a, dx, dy), translate(b, dx, dy), translate(c, dx, dy));
+pub fn moveShape(Line(s, e), dx: Float, dy: Float): Shape =>
+  Line(translate(s, dx, dy), translate(e, dx, dy));
+
+-- Scale a shape by a factor.
+pub fn scale(Circle(c, r), factor: Float): Shape => Circle(c, r * factor);
+pub fn scale(Rectangle(c, w, h), factor: Float): Shape =>
+  Rectangle(c, w * factor, h * factor);
+
+-- =============================================================================
+-- Show Implementation
+-- =============================================================================
+
+impl Show for Point {
+  fn show(p) => "(" ++ show(p.x) ++ ", " ++ show(p.y) ++ ")";
+}
+
+impl Show for Shape {
+  fn show(Circle(c, r)) => "Circle(center: " ++ show(c) ++ ", radius: " ++ show(r) ++ ")";
+  fn show(Rectangle(c, w, h)) =>
+    "Rectangle(corner: " ++ show(c) ++ ", " ++ show(w) ++ "x" ++ show(h) ++ ")";
+  fn show(Triangle(a, b, c)) =>
+    "Triangle(" ++ show(a) ++ ", " ++ show(b) ++ ", " ++ show(c) ++ ")";
+  fn show(Line(s, e)) => "Line(" ++ show(s) ++ " -> " ++ show(e) ++ ")";
+}
+
+-- =============================================================================
+-- Days of the Week (bonus enum example)
+-- =============================================================================
+
+type Day =
+| Monday
+| Tuesday
+| Wednesday
+| Thursday
+| Friday
+| Saturday
+| Sunday
+;
+
+pub fn next(Monday): Day => Tuesday;
+pub fn next(Tuesday): Day => Wednesday;
+pub fn next(Wednesday): Day => Thursday;
+pub fn next(Thursday): Day => Friday;
+pub fn next(Friday): Day => Saturday;
+pub fn next(Saturday): Day => Sunday;
+pub fn next(Sunday): Day => Monday;
+
+pub fn isWeekend?(Saturday): Bool => true;
+pub fn isWeekend?(Sunday): Bool => true;
+pub fn isWeekend?(_): Bool => false;
+
+impl Show for Day {
+  fn show(Monday) => "Monday";
+  fn show(Tuesday) => "Tuesday";
+  fn show(Wednesday) => "Wednesday";
+  fn show(Thursday) => "Thursday";
+  fn show(Friday) => "Friday";
+  fn show(Saturday) => "Saturday";
+  fn show(Sunday) => "Sunday";
+}
