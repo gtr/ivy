@@ -1,25 +1,27 @@
+-- Functions are first-class values in Ivy.
+-- They can be passed around, returned from functions, and stored in variables.
 
--- Defining the price of a book.
+-- The price of a book.
 let dracula = 3;
 
--- Defining a function that produces a function. In this case, given a maximum
--- price, it produces a function that given a book price, returns a boolean 
--- indicating whether we can purchase that book.
-let cheaper_f :: Int -> (Int -> Bool);
-let cheaper_f = fn (max_price) -> 
-    fn (book: Int): Bool -> if (book <= max_price) then true else false;
+-- A function that returns a function.
+-- Given a maximum price, it returns a predicate that checks if a book is cheap enough.
+let cheaperThan: Int -> (Int -> Bool) =
+  fn (maxPrice) => fn (bookPrice) => bookPrice <= maxPrice;
 
--- Let's use that higher-order function to produce different variations of the 
--- returned function:
+-- Using the higher-order function to create specialized predicates:
 
--- This function determines if a book is "real" cheap.
-let real_cheap :: Void -> (Int -> Int);
-let real_cheap = cheaper_f(1);
+-- Can we afford books under $1?
+let realCheap = cheaperThan(1);
 
--- This function determines if a book is "kinda" cheap.
-let kinda_cheap :: Void -> (Int -> Int);
-let kinda_cheap = cheaper_f(5);
+-- Can we afford books under $5?
+let kindaCheap = cheaperThan(5);
 
--- This function determines if a book is "marginally" cheap.
-let marginally_cheap :: Void -> (Int -> Int);
-let marginally_cheap = cheaper_f(10);
+-- Can we afford books under $10?
+let marginallyCheap = cheaperThan(10);
+
+-- Test them out
+println("Dracula costs $" ++ show(dracula));
+println("Real cheap? " ++ show(realCheap(dracula)));
+println("Kinda cheap? " ++ show(kindaCheap(dracula)));
+println("Marginally cheap? " ++ show(marginallyCheap(dracula)));
