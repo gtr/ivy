@@ -1,0 +1,30 @@
+-- Test file for exhaustiveness checking - SHOULD PASS
+
+type Color = | Red | Green | Blue;
+
+-- Exhaustive: all cases covered
+fn colorToInt(c: Color): Int => match c with
+| Red -> 1
+| Green -> 2
+| Blue -> 3
+end;
+
+-- Exhaustive: wildcard covers remaining
+fn isRed(c: Color): Bool => match c with
+| Red -> true
+| _ -> false
+end;
+
+-- Test with Option (builtin)
+fn unwrapOr(opt: Option<Int>, default: Int): Int => match opt with
+| Some(x) -> x
+| None -> default
+end;
+
+-- Test with Bool
+fn boolToInt(b: Bool): Int => match b with
+| true -> 1
+| false -> 0
+end;
+
+println("All exhaustiveness tests passed!");
