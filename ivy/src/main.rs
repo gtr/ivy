@@ -262,6 +262,7 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
             if show_tree {
                 println!("{:#?}", program);
             } else {
+                // Type check first
                 match ivy_types::check_program(&program) {
                     Ok(()) => {
                         let mut interp = Interpreter::new();
@@ -362,6 +363,31 @@ fn print_greeting() {
     );
 }
 
+/// Load prelude types into the type environment.
+fn load_prelude_types(type_checker: &mut ivy_types::TypeChecker, type_env: &mut ivy_types::TypeEnv) {
+    let prelude_paths = [
+        env::current_dir().ok().map(|d| d.join("lib/prelude.ivy")),
+        env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("lib/prelude.ivy"))),
+        env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().and_then(|d| d.parent().map(|d| d.join("lib/prelude.ivy")))),
+    ];
+    for path_opt in prelude_paths {
+        if let Some(path) = path_opt {
+            if path.exists() {
+                if let Ok(source) = fs::read_to_string(&path) {
+                    if let Ok(program) = ivy_parse::parse(&source) {
+                        let _ = ivy_types::check_program_with_env(&program, type_checker, type_env);
+                    }
+                }
+                break;
+            }
+        }
+    }
+}
+
 fn repl() {
     print_greeting();
 
@@ -376,6 +402,8 @@ fn repl() {
     let mut interp = Interpreter::new();
     let mut type_checker = ivy_types::TypeChecker::new();
     let mut type_env = ivy_types::TypeEnv::with_builtins();
+    load_prelude_types(&mut type_checker, &mut type_env);
+
     let mut input_buffer = String::new();
     let mut continuation = false;
 
@@ -416,6 +444,7 @@ fn repl() {
                             interp = Interpreter::new();
                             type_checker = ivy_types::TypeChecker::new();
                             type_env = ivy_types::TypeEnv::with_builtins();
+                            load_prelude_types(&mut type_checker, &mut type_env);
                             println!("Interpreter state reset.");
                         }
 
