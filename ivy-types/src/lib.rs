@@ -1,6 +1,8 @@
 pub mod env;
 pub mod error;
+pub mod exhaustiveness;
 pub mod infer;
+pub mod registry;
 pub mod subst;
 pub mod types;
 pub mod unify;
@@ -8,6 +10,7 @@ pub mod unify;
 pub use env::{TypeEnv, TypeVarGen};
 pub use error::{TypeError, TypeErrorKind, TypeResult};
 pub use infer::TypeChecker;
+pub use registry::{TypeRegistry, VariantInfo};
 pub use subst::Subst;
 pub use types::{Scheme, Type, TypeVar};
 pub use unify::unify;
@@ -16,6 +19,7 @@ use ivy_syntax::decl::{Decl, FnBody, FnDecl};
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::{Program, Spanned};
 
+/// Returns Ok(()) if the program type checks and all pattern matches are exhaustive.
 pub fn check_program(program: &Program) -> TypeResult<()> {
     let mut env = TypeEnv::with_builtins();
     let mut checker = TypeChecker::new();
@@ -155,6 +159,16 @@ fn register_type_constructors(
 
     match body {
         TypeBody::Sum(variants) => {
+            // Register variants in the type registry for exhaustiveness checking
+            let variant_infos: Vec<VariantInfo> = variants
+                .iter()
+                .map(|v| VariantInfo {
+                    name: v.name.name.clone(),
+                    arity: v.fields.len(),
+                })
+                .collect();
+            checker.registry.register_from_variants(&name.name, &variant_infos);
+
             for variant in variants {
                 let mut ctor_ty = result_ty.clone();
                 for field in variant.fields.iter().rev() {

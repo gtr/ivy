@@ -15,6 +15,8 @@ use ivy_syntax::{
 
 use crate::env::{TypeEnv, TypeVarGen};
 use crate::error::{TypeError, TypeResult};
+use crate::exhaustiveness;
+use crate::registry::TypeRegistry;
 use crate::subst::Subst;
 use crate::types::{Scheme, Type};
 use crate::unify::unify_with_subst;
@@ -22,6 +24,8 @@ use crate::unify::unify_with_subst;
 pub struct TypeChecker {
     gen: TypeVarGen,
     pub subst: Subst,
+    /// Type registry for exhaustiveness checking.
+    pub registry: TypeRegistry,
 }
 
 impl TypeChecker {
@@ -30,6 +34,7 @@ impl TypeChecker {
         TypeChecker {
             gen: TypeVarGen::new(),
             subst: Subst::new(),
+            registry: TypeRegistry::with_builtins(),
         }
     }
 
@@ -276,7 +281,7 @@ impl TypeChecker {
         scrutinee: &Spanned<Expr>,
         arms: &[MatchArm],
         env: &TypeEnv,
-        _span: Span,
+        span: Span,
     ) -> TypeResult<Type> {
         let scrutinee_ty = self.infer(scrutinee, env)?;
 
@@ -300,6 +305,11 @@ impl TypeChecker {
                 }
             }
         }
+
+        // Check exhaustiveness
+        let patterns: Vec<&Pattern> = arms.iter().map(|arm| &arm.pattern.node).collect();
+        let resolved_ty = self.subst.apply(&scrutinee_ty);
+        exhaustiveness::check_exhaustiveness(&resolved_ty, &patterns, &self.registry, span)?;
 
         Ok(result_ty.unwrap_or_else(|| self.gen.fresh_type()))
     }
