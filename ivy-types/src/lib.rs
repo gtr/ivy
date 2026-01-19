@@ -48,12 +48,34 @@ pub fn check_program_with_env(program: &Program, checker: &mut TypeChecker, env:
 /// Type check a single declaration.
 fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv) -> TypeResult<()> {
     match &decl.node {
+        Decl::TypeSig { name, ty, .. } => {
+            // register the type signature in the environment
+            let sig_ty = checker.type_expr_to_type(&ty.node, env);
+            let final_ty = checker.finalize(&sig_ty);
+            let scheme = env.generalize(&final_ty);
+            env.insert(name.name.clone(), scheme);
+            Ok(())
+        }
         Decl::Let { pattern, value, ty, .. } => {
+            // check if there's an existing type signature for this binding
+            let existing_scheme = if let Pattern::Var(ident) = &pattern.node {
+                env.get(&ident.name).cloned()
+            } else {
+                None
+            };
+
             let value_ty = checker.infer(value, env)?;
             if let Some(ann) = ty {
                 let ann_ty = checker.type_expr_to_type(&ann.node, env);
                 unify::unify_with_subst(&value_ty, &ann_ty, &mut checker.subst, ann.span)?;
             }
+
+            // Check against existing type signature if present
+            if let Some(existing) = existing_scheme {
+                let existing_ty = checker.instantiate(&existing);
+                unify::unify_with_subst(&value_ty, &existing_ty, &mut checker.subst, decl.span)?;
+            }
+
             if let Pattern::Var(ident) = &pattern.node {
                 let final_ty = checker.finalize(&value_ty);
                 let scheme = env.generalize(&final_ty);

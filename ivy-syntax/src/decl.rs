@@ -53,6 +53,13 @@ pub enum Decl {
 
     /// Function declaration: `fn add(x, y) => x + y;`
     Fn(FnDecl),
+    /// Standalone type signature: `fn factorial :: Int -> Int` or `let x :: Int`
+    TypeSig {
+        is_pub: bool,
+        name: Ident,
+        ty: Spanned<TypeExpr>,
+        span: Span,
+    },
 }
 
 /// Function declaration.
