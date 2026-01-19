@@ -76,6 +76,11 @@ impl<'a> Parser<'a> {
         self.peek() == kind
     }
 
+    /// Check if the token current position + offset matches a kind.
+    fn check_ahead(&self, offset: usize, kind: TokenKind) -> bool {
+        self.tokens.get(self.pos + offset).map_or(false, |t| t.kind == kind)
+    }
+
     /// Consume a token if it matches, otherwise return an error.
     fn expect(&mut self, kind: TokenKind) -> ParseResult<&Token> {
         if self.check(kind) {
@@ -467,11 +472,18 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parse function declaration: fn name(params) => body;
+    /// Parse a function declaration: `fn name(params) => body;`
+    /// Or type signature: `fn name :: Type;`
     fn parse_fn_decl(&mut self, is_pub: bool) -> ParseResult<Decl> {
         let start = self.current().span.start;
         self.expect(TokenKind::Fn)?;
         let name = self.parse_ident()?;
+        if self.match_token(TokenKind::ColonColon).is_some() {
+            let ty = self.parse_type_expr()?;
+            self.expect(TokenKind::Semi)?;
+            let span = self.span_from(start);
+            return Ok(Decl::TypeSig { is_pub, name, ty, span });
+        }
         let (params, return_ty, body) = self.parse_fn_body()?;
         self.expect(TokenKind::Semi)?;
         let span = self.span_from(start);
@@ -552,10 +564,24 @@ impl<'a> Parser<'a> {
         Ok(Param::new(pattern, ty, span))
     }
 
-    /// Parse let declaration: let x = expr;
+    /// Parse let declaration: `let x = expr;`
+    /// Or type signature: `let x :: Type;`
     fn parse_let_decl(&mut self, is_pub: bool) -> ParseResult<Decl> {
+        let start = self.current().span.start;
         self.expect(TokenKind::Let)?;
         let is_mut = self.match_token(TokenKind::Mut).is_some();
+
+        // Check for type signature syntax: `let name :: Type`
+        // We need to look ahead before parsing pattern, cuz pattern parser consumes ::
+        if self.check(TokenKind::Ident) && self.check_ahead(1, TokenKind::ColonColon) {
+            let name = self.parse_ident()?;
+            self.expect(TokenKind::ColonColon)?;
+            let ty = self.parse_type_expr()?;
+            self.expect(TokenKind::Semi)?;
+            let span = self.span_from(start);
+            return Ok(Decl::TypeSig { is_pub, name, ty, span });
+        }
+
         let pattern = self.parse_pattern()?;
 
         let ty = if self.match_token(TokenKind::Colon).is_some() {
@@ -582,7 +608,7 @@ impl<'a> Parser<'a> {
         self.parse_type_fn()
     }
 
-    /// Parse function type: A -> B
+    /// Parse function type: `A -> B`
     fn parse_type_fn(&mut self) -> ParseResult<Spanned<TypeExpr>> {
         let start = self.current().span.start;
         let mut ty = self.parse_type_app()?;
@@ -602,7 +628,7 @@ impl<'a> Parser<'a> {
         Ok(ty)
     }
 
-    /// Parse type application: Option<Int>
+    /// Parse type application: `Option<Int>`
     fn parse_type_app(&mut self) -> ParseResult<Spanned<TypeExpr>> {
         let start = self.current().span.start;
         let base = self.parse_type_primary()?;
