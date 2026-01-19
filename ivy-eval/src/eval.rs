@@ -1076,6 +1076,9 @@ impl Interpreter {
                     .define(&fn_decl.name.name, Value::Closure(Rc::new(closure)), false);
                 Ok(Value::Unit)
             }
+
+            // Type signatures (were) handled by the type checker, noop in runtime
+            Decl::TypeSig { .. } => Ok(Value::Unit),
         }
     }
 }
