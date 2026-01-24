@@ -167,14 +167,6 @@ impl<'a> Lexer<'a> {
             self.advance_by(2);
             return Ok(self.make_token(TokenKind::Ge, start));
         }
-        if self.starts_with("&&") {
-            self.advance_by(2);
-            return Ok(self.make_token(TokenKind::AndAnd, start));
-        }
-        if self.starts_with("||") {
-            self.advance_by(2);
-            return Ok(self.make_token(TokenKind::OrOr, start));
-        }
         if self.starts_with("::") {
             self.advance_by(2);
             return Ok(self.make_token(TokenKind::ColonColon, start));
@@ -474,7 +466,7 @@ mod tests {
 
     #[test]
     fn test_operators() {
-        let tokens = lex("+ - * / % == != < <= > >= && || :: ++").unwrap();
+        let tokens = lex("+ - * / % == != < <= > >= and or :: ++").unwrap();
         assert_eq!(tokens[0].kind, TokenKind::Plus);
         assert_eq!(tokens[1].kind, TokenKind::Minus);
         assert_eq!(tokens[2].kind, TokenKind::Star);
@@ -486,8 +478,8 @@ mod tests {
         assert_eq!(tokens[8].kind, TokenKind::Le);
         assert_eq!(tokens[9].kind, TokenKind::Gt);
         assert_eq!(tokens[10].kind, TokenKind::Ge);
-        assert_eq!(tokens[11].kind, TokenKind::AndAnd);
-        assert_eq!(tokens[12].kind, TokenKind::OrOr);
+        assert_eq!(tokens[11].kind, TokenKind::And);
+        assert_eq!(tokens[12].kind, TokenKind::Or);
         assert_eq!(tokens[13].kind, TokenKind::ColonColon);
         assert_eq!(tokens[14].kind, TokenKind::PlusPlus);
     }

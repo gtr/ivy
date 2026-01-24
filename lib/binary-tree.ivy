@@ -30,7 +30,7 @@ impl Show for Tree<a> where Show<a> {
 impl Eq for Tree<a> where Eq<a> {
   fn eq(Leaf, Leaf) => true;
   fn eq(Node(v1, l1, r1), Node(v2, l2, r2)) =>
-    eq(v1, v2) && eq(l1, l2) && eq(r1, r2);
+    eq(v1, v2) and eq(l1, l2) and eq(r1, r2);
   fn eq(_, _) => false;
 }
 
@@ -153,7 +153,7 @@ fn isBSTHelper(Node(v, left, right), minBound: Option<a>, maxBound: Option<a>): 
   | Some(max) -> lt(v, max)
   end;
 
-  aboveMin && belowMax &&
-    isBSTHelper(left, minBound, Some(v)) &&
+  aboveMin and belowMax and
+    isBSTHelper(left, minBound, Some(v)) and
     isBSTHelper(right, Some(v), maxBound)
 };

@@ -73,6 +73,8 @@ pub enum TokenKind {
     Where,
     Do,
     For,
+    And,
+    Or,
 
     // Operators
     /// +
@@ -97,10 +99,6 @@ pub enum TokenKind {
     Gt,
     /// >=
     Ge,
-    /// &&
-    AndAnd,
-    /// ||
-    OrOr,
     /// !
     Bang,
     /// ::
@@ -171,6 +169,8 @@ impl TokenKind {
                 | TokenKind::Where
                 | TokenKind::Do
                 | TokenKind::For
+                | TokenKind::And
+                | TokenKind::Or
         )
     }
 
@@ -196,6 +196,8 @@ impl TokenKind {
             "where" => Some(TokenKind::Where),
             "do" => Some(TokenKind::Do),
             "for" => Some(TokenKind::For),
+            "and" => Some(TokenKind::And),
+            "or" => Some(TokenKind::Or),
             _ => None,
         }
     }
@@ -230,6 +232,8 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Where => "'where'",
             TokenKind::Do => "'do'",
             TokenKind::For => "'for'",
+            TokenKind::And => "'and'",
+            TokenKind::Or => "'or'",
             TokenKind::Plus => "'+'",
             TokenKind::Minus => "'-'",
             TokenKind::Star => "'*'",
@@ -241,8 +245,6 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Le => "'<='",
             TokenKind::Gt => "'>'",
             TokenKind::Ge => "'>='",
-            TokenKind::AndAnd => "'&&'",
-            TokenKind::OrOr => "'||'",
             TokenKind::Bang => "'!'",
             TokenKind::ColonColon => "'::'",
             TokenKind::PlusPlus => "'++'",
