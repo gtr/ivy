@@ -170,7 +170,7 @@ mod parser_tests {
         let code = r#"
       match xs with
       | [] -> 0
-      | [x :: rest] -> x
+      | [x | rest] -> x
       end;
     "#;
         assert!(parse(code).is_ok());
@@ -255,8 +255,8 @@ mod parser_tests {
 
     #[test]
     fn test_parse_cons_operator() {
-        assert!(parse("1 :: [];").is_ok());
-        assert!(parse("1 :: 2 :: [];").is_ok());
+        assert!(parse("[1 | []];").is_ok());
+        assert!(parse("[1 | [2 | []]];").is_ok());
     }
 
     #[test]
@@ -337,8 +337,8 @@ mod parser_tests {
 
     #[test]
     fn test_parse_boolean_operators() {
-        assert!(parse("true && false;").is_ok());
-        assert!(parse("true || false;").is_ok());
+        assert!(parse("true and false;").is_ok());
+        assert!(parse("true or false;").is_ok());
         assert!(parse("!true;").is_ok());
     }
 

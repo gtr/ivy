@@ -189,10 +189,10 @@ mod interpreter_tests {
 
     #[test]
     fn test_boolean_ops() {
-        assert!(matches!(eval("true && true;"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("true && false;"), Ok(Value::Bool(false))));
-        assert!(matches!(eval("false || true;"), Ok(Value::Bool(true))));
-        assert!(matches!(eval("false || false;"), Ok(Value::Bool(false))));
+        assert!(matches!(eval("true and true;"), Ok(Value::Bool(true))));
+        assert!(matches!(eval("true and false;"), Ok(Value::Bool(false))));
+        assert!(matches!(eval("false or true;"), Ok(Value::Bool(true))));
+        assert!(matches!(eval("false or false;"), Ok(Value::Bool(false))));
         assert!(matches!(eval("!true;"), Ok(Value::Bool(false))));
         assert!(matches!(eval("!false;"), Ok(Value::Bool(true))));
     }
@@ -200,8 +200,8 @@ mod interpreter_tests {
     #[test]
     fn test_short_circuit() {
         // Should not error because right side is not evaluated
-        assert!(matches!(eval("false && (1/0 == 1);"), Ok(Value::Bool(false))));
-        assert!(matches!(eval("true || (1/0 == 1);"), Ok(Value::Bool(true))));
+        assert!(matches!(eval("false and (1/0 == 1);"), Ok(Value::Bool(false))));
+        assert!(matches!(eval("true or (1/0 == 1);"), Ok(Value::Bool(true))));
     }
 
     #[test]
@@ -273,7 +273,7 @@ mod interpreter_tests {
 
     #[test]
     fn test_cons_operator() {
-        if let Ok(Value::List(l)) = eval("1 :: [2, 3];") {
+        if let Ok(Value::List(l)) = eval("[1 | [2, 3]];") {
             let vec = l.to_vec();
             assert_eq!(vec.len(), 3);
             assert!(matches!(vec[0], Value::Int(1)));
@@ -314,7 +314,7 @@ mod interpreter_tests {
         let code = r#"
       match [1, 2, 3] with
       | [] -> 0
-      | [x :: _] -> x
+      | [x | _] -> x
       end;
     "#;
         assert!(matches!(eval(code), Ok(Value::Int(1))));
@@ -464,18 +464,4 @@ mod loader_tests {
         let loader = ModuleLoader::new(vec![]);
         assert!(!loader.is_loaded("NonexistentModule"));
     }
-}
-
-#[cfg(test)]
-mod multiline_tests {
-    // TODO(gtr): These would test the is_incomplete_input function if it were extracted
-    // For now, document what should be tested
-
-    // Test cases for multi-line detection:
-    // - "let x = {" should be incomplete (unclosed brace)
-    // - "fn f(" should be incomplete (unclosed paren)
-    // - "[1, 2," should be incomplete (unclosed bracket)
-    // - "\"unterminated" should be incomplete (unclosed string)
-    // - "1 + 2" should be complete (valid expression)
-    // - "{}" should be complete
 }

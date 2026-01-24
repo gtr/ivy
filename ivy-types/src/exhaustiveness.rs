@@ -56,7 +56,7 @@ pub fn find_missing_patterns(ty: &Type, patterns: &[&Pattern], registry: &TypeRe
         // Tuples: need to check all positions recursively
         Type::Tuple(elem_types) => find_missing_tuple(elem_types, patterns, registry),
 
-        // Lists: check [] and (_ :: _) patterns
+        // Lists: check [] and [_ | _] patterns
         Type::List(_elem_ty) => find_missing_list(patterns),
 
         // Primitives (Int, Float, String, Char): infinite domain
@@ -233,7 +233,7 @@ fn find_missing_list(patterns: &[&Pattern]) -> Vec<String> {
                 if left_missing.iter().all(|m| m != "[]") || right_missing.iter().all(|m| m != "[]") {
                     has_empty = true;
                 }
-                if left_missing.iter().all(|m| m != "(_ :: _)") || right_missing.iter().all(|m| m != "(_ :: _)") {
+                if left_missing.iter().all(|m| m != "[_ | _]") || right_missing.iter().all(|m| m != "[_ | _]") {
                     has_cons = true;
                 }
             }
@@ -246,7 +246,7 @@ fn find_missing_list(patterns: &[&Pattern]) -> Vec<String> {
         missing.push("[]".to_string());
     }
     if !has_cons {
-        missing.push("(_ :: _)".to_string());
+        missing.push("[_ | _]".to_string());
     }
     missing
 }

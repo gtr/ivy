@@ -5,28 +5,28 @@ let numbers = [1, 2, 3, 4, 5];
 
 -- Compute the length of a list using pattern matching.
 fn length([]) => 0;
-fn length([_ :: tail]) => 1 + length(tail);
+fn length([_ | tail]) => 1 + length(tail);
 
 println("Length: " ++ show(length(numbers)));
 
 -- Sum all elements in a list.
 fn sum([]) => 0;
-fn sum([head :: tail]) => head + sum(tail);
+fn sum([head | tail]) => head + sum(tail);
 
 println("Sum: " ++ show(sum(numbers)));
 
 -- Map a function over a list.
 fn map(f, []) => [];
-fn map(f, [head :: tail]) => f(head) :: map(f, tail);
+fn map(f, [head | tail]) => [f(head) | map(f, tail)];
 
 let doubled = map(fn (x) => x * 2, numbers);
 println("Doubled: " ++ show(doubled));
 
 -- Filter a list based on a predicate.
 fn filter(pred, []) => [];
-fn filter(pred, [head :: tail]) =>
+fn filter(pred, [head | tail]) =>
   if pred(head)
-  then head :: filter(pred, tail)
+  then [head | filter(pred, tail)]
   else filter(pred, tail);
 
 let evens = filter(fn (x) => x % 2 == 0, numbers);

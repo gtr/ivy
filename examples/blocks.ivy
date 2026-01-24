@@ -23,12 +23,12 @@ println(show(if age >= 18 then true else false));
 -- Merges two sorted lists into one sorted list.
 fn merge(lstA, lstB) => match lstA with
 | [] -> lstB
-| [h1 :: t1] -> match lstB with
+| [h1 | t1] -> match lstB with
   | [] -> lstA
-  | [h2 :: t2] ->
+  | [h2 | t2] ->
     if h1 <= h2
-    then h1 :: merge(t1, lstB)
-    else h2 :: merge(lstA, t2)
+    then [h1 | merge(t1, lstB)]
+    else [h2 | merge(lstA, t2)]
   end
 end;
 
@@ -36,9 +36,9 @@ end;
 -- Splits a list into two halves.
 fn divide(lst) => match lst with
 | [] -> ([], [])
-| [h :: tail] -> do {
+| [h | tail] -> do {
     let (odds, evens) = divide(tail);
-    (h :: evens, odds)
+    ([h | evens], odds)
   }
 end;
 

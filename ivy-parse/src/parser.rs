@@ -882,12 +882,12 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parse or expression: a || b
+    /// Parse or expression: a or b
     fn parse_or_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
         let mut left = self.parse_and_expr()?;
 
-        while self.match_token(TokenKind::OrOr).is_some() {
+        while self.match_token(TokenKind::Or).is_some() {
             let op_span = self.tokens[self.pos - 1].span;
             let right = self.parse_and_expr()?;
             let span = self.span_from(start);
@@ -904,12 +904,12 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parse and expression: a && b
+    /// Parse and expression: a and b
     fn parse_and_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
         let mut left = self.parse_eq_expr()?;
 
-        while self.match_token(TokenKind::AndAnd).is_some() {
+        while self.match_token(TokenKind::And).is_some() {
             let op_span = self.tokens[self.pos - 1].span;
             let right = self.parse_eq_expr()?;
             let span = self.span_from(start);
@@ -959,7 +959,7 @@ impl<'a> Parser<'a> {
     /// Parse comparison expression: a < b, a <= b, etc.
     fn parse_cmp_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
-        let left = self.parse_cons_expr()?;
+        let left = self.parse_concat_expr()?;
 
         let op = if self.match_token(TokenKind::Lt).is_some() {
             Some(BinOp::Lt)
@@ -975,7 +975,7 @@ impl<'a> Parser<'a> {
 
         if let Some(op) = op {
             let op_span = self.tokens[self.pos - 1].span;
-            let right = self.parse_cons_expr()?;
+            let right = self.parse_concat_expr()?;
             let span = self.span_from(start);
             return Ok(Spanned::new(
                 Expr::Binary {
@@ -990,28 +990,20 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parse cons/concat expression: a :: b, a ++ b (right-associative)
-    fn parse_cons_expr(&mut self) -> ParseResult<Spanned<Expr>> {
+    /// Parse concat expression: a ++ b (right-associative)
+    fn parse_concat_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
         let left = self.parse_add_expr()?;
 
-        let op = if self.match_token(TokenKind::ColonColon).is_some() {
-            Some(BinOp::Cons)
-        } else if self.match_token(TokenKind::PlusPlus).is_some() {
-            Some(BinOp::Concat)
-        } else {
-            None
-        };
-
-        if let Some(op) = op {
+        if self.match_token(TokenKind::PlusPlus).is_some() {
             let op_span = self.tokens[self.pos - 1].span;
             // Right-associative: recurse
-            let right = self.parse_cons_expr()?;
+            let right = self.parse_concat_expr()?;
             let span = self.span_from(start);
             return Ok(Spanned::new(
                 Expr::Binary {
                     left: Box::new(left),
-                    op: Spanned::new(op, op_span),
+                    op: Spanned::new(BinOp::Concat, op_span),
                     right: Box::new(right),
                 },
                 span,
@@ -1294,18 +1286,35 @@ impl<'a> Parser<'a> {
                 Ok(Spanned::new(Expr::Paren { inner: Box::new(first) }, span))
             }
 
-            // List: [a, b, c]
+            // List: [a, b, c] or cons: [h | t]
             TokenKind::LBracket => {
                 self.advance();
 
-                let mut elements = Vec::new();
-                if !self.check(TokenKind::RBracket) {
-                    loop {
-                        elements.push(self.parse_expr()?);
-                        if !self.match_token(TokenKind::Comma).is_some() {
-                            break;
-                        }
-                    }
+                // Empty list: []
+                if self.match_token(TokenKind::RBracket).is_some() {
+                    let span = self.span_from(start);
+                    return Ok(Spanned::new(Expr::List { elements: vec![] }, span));
+                }
+
+                // check for cons syntax: [h | t]
+                let first = self.parse_expr()?;
+                if self.match_token(TokenKind::Pipe).is_some() {
+                    let tail = self.parse_expr()?;
+                    self.expect(TokenKind::RBracket)?;
+                    let span = self.span_from(start);
+                    return Ok(Spanned::new(
+                        Expr::Binary {
+                            left: Box::new(first),
+                            op: Spanned::new(BinOp::Cons, span),
+                            right: Box::new(tail),
+                        },
+                        span,
+                    ));
+                }
+
+                let mut elements = vec![first];
+                while self.match_token(TokenKind::Comma).is_some() {
+                    elements.push(self.parse_expr()?);
                 }
 
                 self.expect(TokenKind::RBracket)?;
@@ -1356,7 +1365,7 @@ impl<'a> Parser<'a> {
     /// Parse or-pattern: p1 | p2
     fn parse_pattern_or(&mut self) -> ParseResult<Spanned<Pattern>> {
         let start = self.current().span.start;
-        let left = self.parse_pattern_cons()?;
+        let left = self.parse_pattern_primary()?;
 
         if self.match_token(TokenKind::Pipe).is_some() {
             let right = self.parse_pattern_or()?;
@@ -1371,26 +1380,6 @@ impl<'a> Parser<'a> {
         }
 
         Ok(left)
-    }
-
-    /// Parse cons pattern: h :: t
-    fn parse_pattern_cons(&mut self) -> ParseResult<Spanned<Pattern>> {
-        let start = self.current().span.start;
-        let head = self.parse_pattern_primary()?;
-
-        if self.match_token(TokenKind::ColonColon).is_some() {
-            let tail = self.parse_pattern_cons()?;
-            let span = self.span_from(start);
-            return Ok(Spanned::new(
-                Pattern::Cons {
-                    head: Box::new(head),
-                    tail: Box::new(tail),
-                },
-                span,
-            ));
-        }
-
-        Ok(head)
     }
 
     /// Parse primary pattern.
@@ -1524,14 +1513,29 @@ impl<'a> Parser<'a> {
             TokenKind::LBracket => {
                 self.advance();
 
-                let mut elements = Vec::new();
-                if !self.check(TokenKind::RBracket) {
-                    loop {
-                        elements.push(self.parse_pattern()?);
-                        if !self.match_token(TokenKind::Comma).is_some() {
-                            break;
-                        }
-                    }
+                // Empty list: []
+                if self.match_token(TokenKind::RBracket).is_some() {
+                    let span = self.span_from(start);
+                    return Ok(Spanned::new(Pattern::List { elements: vec![] }, span));
+                }
+
+                // check for cons syntax: [h | t]
+                let first = self.parse_pattern_primary()?;
+                if self.match_token(TokenKind::Pipe).is_some() {
+                    let tail = self.parse_pattern()?;
+                    self.expect(TokenKind::RBracket)?;
+                    let span = self.span_from(start);
+                    return Ok(Spanned::new(
+                        Pattern::Cons {
+                            head: Box::new(first),
+                            tail: Box::new(tail),
+                        },
+                        span,
+                    ));
+                }
+                let mut elements = vec![first];
+                while self.match_token(TokenKind::Comma).is_some() {
+                    elements.push(self.parse_pattern_primary()?);
                 }
 
                 self.expect(TokenKind::RBracket)?;
