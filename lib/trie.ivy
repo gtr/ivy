@@ -37,7 +37,7 @@ pub fn insert(trie: Trie, word: String): Trie =>
 fn insertChars(trie: Trie, []): Trie =>
   { trie | isWord: true };
 
-fn insertChars(trie: Trie, [c :: cs]): Trie => do {
+fn insertChars(trie: Trie, [c | cs]): Trie => do {
   let child = match Map.get(trie.children, c) with
   | None -> empty()
   | Some(t) -> t
@@ -51,7 +51,7 @@ fn insertChars(trie: Trie, [c :: cs]): Trie => do {
 
 -- Insert multiple words.
 pub fn insertAll(trie: Trie, []): Trie => trie;
-pub fn insertAll(trie: Trie, [word :: words]): Trie =>
+pub fn insertAll(trie: Trie, [word | words]): Trie =>
   insertAll(insert(trie, word), words);
 
 -- Build a trie from a list of words.
@@ -66,7 +66,7 @@ pub fn contains?(trie: Trie, word: String): Bool =>
   containsChars?(trie, toChars(word));
 
 fn containsChars?(trie: Trie, []): Bool => trie.isWord;
-fn containsChars?(trie: Trie, [c :: cs]): Bool =>
+fn containsChars?(trie: Trie, [c | cs]): Bool =>
   match Map.get(trie.children, c) with
   | None -> false
   | Some(child) -> containsChars?(child, cs)
@@ -84,7 +84,7 @@ fn findNode(trie: Trie, prefix: String): Option<Trie> =>
   findNodeChars(trie, toChars(prefix));
 
 fn findNodeChars(trie: Trie, []): Option<Trie> => Some(trie);
-fn findNodeChars(trie: Trie, [c :: cs]): Option<Trie> =>
+fn findNodeChars(trie: Trie, [c | cs]): Option<Trie> =>
   match Map.get(trie.children, c) with
   | None -> None
   | Some(child) -> findNodeChars(child, cs)

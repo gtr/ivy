@@ -203,50 +203,50 @@ fn mapErr(f: E -> F, Err(e)): Result<T, F> => Err(f(e));
 -- =============================================================================
 
 fn head([]): Option<a> => None;
-fn head([x :: _]): Option<a> => Some(x);
+fn head([x | _]): Option<a> => Some(x);
 
 fn tail([]): Option<[a]> => None;
-fn tail([_ :: xs]): Option<[a]> => Some(xs);
+fn tail([_ | xs]): Option<[a]> => Some(xs);
 
 fn length([]): Int => 0;
-fn length([_ :: xs]): Int => 1 + length(xs);
+fn length([_ | xs]): Int => 1 + length(xs);
 
 fn isEmpty?([]): Bool => true;
-fn isEmpty?([_ :: _]): Bool => false;
+fn isEmpty?([_ | _]): Bool => false;
 
 fn map(f: a -> b, []): [b] => [];
-fn map(f: a -> b, [x :: xs]): [b] => f(x) :: map(f, xs);
+fn map(f: a -> b, [x | xs]): [b] => [f(x) | map(f, xs)];
 
 fn filter(pred: a -> Bool, []): [a] => [];
-fn filter(pred: a -> Bool, [x :: xs]): [a] =>
-  if pred(x) then x :: filter(pred, xs) else filter(pred, xs);
+fn filter(pred: a -> Bool, [x | xs]): [a] =>
+  if pred(x) then [x | filter(pred, xs)] else filter(pred, xs);
 
 fn foldl(f: b -> a -> b, acc: b, []): b => acc;
-fn foldl(f: b -> a -> b, acc: b, [x :: xs]): b => foldl(f, f(acc, x), xs);
+fn foldl(f: b -> a -> b, acc: b, [x | xs]): b => foldl(f, f(acc, x), xs);
 
 fn foldr(f: a -> b -> b, acc: b, []): b => acc;
-fn foldr(f: a -> b -> b, acc: b, [x :: xs]): b => f(x, foldr(f, acc, xs));
+fn foldr(f: a -> b -> b, acc: b, [x | xs]): b => f(x, foldr(f, acc, xs));
 
-fn reverse(xs: [a]): [a] => foldl(fn (acc, x) => x :: acc, [], xs);
+fn reverse(xs: [a]): [a] => foldl(fn (acc, x) => [x | acc], [], xs);
 
 fn concat([], ys: [a]): [a] => ys;
-fn concat([x :: xs], ys: [a]): [a] => x :: concat(xs, ys);
+fn concat([x | xs], ys: [a]): [a] => [x | concat(xs, ys)];
 
 fn any(pred: a -> Bool, []): Bool => false;
-fn any(pred: a -> Bool, [x :: xs]): Bool =>
+fn any(pred: a -> Bool, [x | xs]): Bool =>
   if pred(x) then true else any(pred, xs);
 
 fn all(pred: a -> Bool, []): Bool => true;
-fn all(pred: a -> Bool, [x :: xs]): Bool =>
+fn all(pred: a -> Bool, [x | xs]): Bool =>
   if pred(x) then all(pred, xs) else false;
 
 fn take(0, _): [a] => [];
 fn take(_, []): [a] => [];
-fn take(n: Int, [x :: xs]): [a] => x :: take(n - 1, xs);
+fn take(n: Int, [x | xs]): [a] => [x | take(n - 1, xs)];
 
 fn drop(0, xs: [a]): [a] => xs;
 fn drop(_, []): [a] => [];
-fn drop(n: Int, [_ :: xs]): [a] => drop(n - 1, xs);
+fn drop(n: Int, [_ | xs]): [a] => drop(n - 1, xs);
 
 -- =============================================================================
 -- I/O Functions (implemented in Rust)

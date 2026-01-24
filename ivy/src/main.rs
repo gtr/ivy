@@ -502,7 +502,7 @@ fn repl() {
                                                 Ok(ty) => {
                                                     let final_ty = type_checker.finalize(&ty);
                                                     println!(
-                                                        "{}{}{} : {}{}{}",
+                                                        "{}{}{} :: {}{}{}",
                                                         BLUE, expr_str, RESET, GREEN, final_ty, RESET
                                                     );
                                                 }
