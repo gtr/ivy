@@ -63,6 +63,16 @@ pub enum TypeErrorKind {
 
     /// Type annotation doesn't match inferred type.
     AnnotationMismatch { annotated: Type, inferred: Type },
+
+    /// Record field count mismatch
+    RecordFieldCount {
+        record: String,
+        expected: usize,
+        found: usize,
+    },
+
+    /// Missing field in record literal
+    MissingField { record: String, field: String },
 }
 
 impl TypeError {
@@ -130,6 +140,27 @@ impl TypeError {
     pub fn annotation_mismatch(annotated: Type, inferred: Type, span: Span) -> TypeError {
         TypeError::new(TypeErrorKind::AnnotationMismatch { annotated, inferred }, span)
     }
+
+    pub fn record_field_count(record: &str, expected: usize, found: usize, span: Span) -> TypeError {
+        TypeError::new(
+            TypeErrorKind::RecordFieldCount {
+                record: record.to_string(),
+                expected,
+                found,
+            },
+            span,
+        )
+    }
+
+    pub fn missing_field(record: &str, field: &str, span: Span) -> TypeError {
+        TypeError::new(
+            TypeErrorKind::MissingField {
+                record: record.to_string(),
+                field: field.to_string(),
+            },
+            span,
+        )
+    }
 }
 
 impl fmt::Display for TypeError {
@@ -192,6 +223,24 @@ impl fmt::Display for TypeError {
                     "type annotation {} doesn't match inferred type {}",
                     annotated, inferred
                 )
+            }
+            TypeErrorKind::RecordFieldCount {
+                record,
+                expected,
+                found,
+            } => {
+                write!(
+                    f,
+                    "record `{}`  has {} field{}, but {} {} provided",
+                    record,
+                    expected,
+                    if *expected == 1 { "" } else { "s" },
+                    found,
+                    if *found == 1 { "was" } else { "were" }
+                )
+            }
+            TypeErrorKind::MissingField { record, field } => {
+                write!(f, "missing field `{}` in record {}", field, record)
             }
         }
     }

@@ -91,13 +91,48 @@ impl TypeChecker {
             Expr::List { elements } => self.infer_list(elements, env, span),
 
             Expr::Record { name, fields } => {
-                // TODO(gtr): For now, records are structural; we'll need type definitions later
-                let mut field_types = Vec::new();
-                for field in fields {
-                    let ty = self.infer(&field.value, env)?;
-                    field_types.push((field.name.name.clone(), ty));
+                // look up the record type definition from the registry
+                let expected_fields_opt = self
+                    .registry
+                    .get_record_fields(&name.name)
+                    .map(|fields| fields.to_vec());
+
+                if let Some(expected_fields) = expected_fields_opt {
+                    if fields.len() != expected_fields.len() {
+                        return Err(TypeError::record_field_count(
+                            &name.name,
+                            expected_fields.len(),
+                            fields.len(),
+                            span,
+                        ));
+                    }
+                    for field in fields {
+                        let field_ty = self.infer(&field.value, env)?;
+
+                        // Find the expected type for this field
+                        if let Some(expected) = expected_fields.iter().find(|f| f.name == field.name.name) {
+                            // unify with expected type (expected first for correct error messages)
+                            crate::unify::unify_with_subst(&expected.ty, &field_ty, &mut self.subst, field.span)?;
+                        } else {
+                            return Err(TypeError::undefined_field(&name.name, &field.name.name, field.span));
+                        }
+                    }
+                    for expected in &expected_fields {
+                        if !fields.iter().any(|f| f.name.name == expected.name) {
+                            return Err(TypeError::missing_field(&name.name, &expected.name, span));
+                        }
+                    }
+
+                    Ok(Type::named(&name.name))
+                } else {
+                    // Fallback to structural typing if type not found, this handles cases where record type wasnt declared
+                    let mut field_types = Vec::new();
+                    for field in fields {
+                        let ty = self.infer(&field.value, env)?;
+                        field_types.push((field.name.name.clone(), ty));
+                    }
+                    Ok(Type::Record(name.name.clone(), field_types))
                 }
-                Ok(Type::Record(name.name.clone(), field_types))
             }
 
             Expr::RecordUpdate { base, updates } => {

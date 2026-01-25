@@ -219,20 +219,18 @@ fn register_type_constructors(
             }
         }
         TypeBody::Record(fields) => {
+            // Register record type info in the type registry for field validation
             let field_types: Vec<(String, Type)> = fields
                 .iter()
                 .map(|f| (f.name.name.clone(), checker.type_expr_to_type(&f.ty.node, env)))
                 .collect();
 
-            let record_ty = Type::Record(name.name.clone(), field_types);
+            // Store the record definition in the registry for later validation
+            checker.registry.register_record(&name.name, &field_types);
 
-            let scheme = if type_params.is_empty() {
-                Scheme::mono(record_ty)
-            } else {
-                Scheme::poly(type_params, record_ty)
-            };
-
-            env.insert(name.name.clone(), scheme);
+            // Note: We do NOT insert record types into the value environment
+            // record construction uses `TypeName { field: value }` syntax
+            // not function call syntax like variant constructors.
         }
     }
 }
