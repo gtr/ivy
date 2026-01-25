@@ -189,6 +189,12 @@ impl SourcedTypeError {
             TypeErrorKind::AnnotationMismatch { annotated, inferred } => {
                 format!("annotation {} doesn't match inferred {}", annotated, inferred)
             }
+            TypeErrorKind::RecordFieldCount { expected, found, .. } => {
+                format!("expected {} field(s), found {}", expected, found)
+            }
+            TypeErrorKind::MissingField { field, .. } => {
+                format!("missing field `{}`", field)
+            }
         };
         Self {
             src: NamedSource::new(filename, source.to_string()),
