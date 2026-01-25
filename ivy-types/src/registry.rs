@@ -11,6 +11,15 @@ pub struct ConstructorInfo {
     pub arity: usize,
 }
 
+/// Information about a record field.
+#[derive(Debug, Clone)]
+pub struct RecordFieldInfo {
+    /// The field name.
+    pub name: String,
+    /// The field type.
+    pub ty: crate::Type,
+}
+
 /// Registry of type definitions.
 ///
 /// Maintains mappings from type names -> constructors and vice versa
@@ -22,6 +31,9 @@ pub struct TypeRegistry {
 
     /// Maps constructor name -> constructor info
     constructor_info: HashMap<String, ConstructorInfo>,
+
+    /// Maps record type name -> list of fields (in declaration order)
+    records: HashMap<String, Vec<RecordFieldInfo>>,
 }
 
 impl TypeRegistry {
@@ -89,6 +101,26 @@ impl TypeRegistry {
 
     pub fn constructor_count(&self, type_name: &str) -> usize {
         self.constructors.get(type_name).map(|v| v.len()).unwrap_or(0)
+    }
+
+    /// Register a record type with its fields.
+    pub fn register_record(&mut self, type_name: &str, fields: &[(String, crate::Type)]) {
+        let field_infos: Vec<RecordFieldInfo> = fields
+            .iter()
+            .map(|(name, ty)| RecordFieldInfo {
+                name: name.clone(),
+                ty: ty.clone(),
+            })
+            .collect();
+        self.records.insert(type_name.to_string(), field_infos);
+    }
+
+    pub fn get_record_fields(&self, type_name: &str) -> Option<&[RecordFieldInfo]> {
+        self.records.get(type_name).map(|v| v.as_slice())
+    }
+
+    pub fn is_record_type(&self, type_name: &str) -> bool {
+        self.records.contains_key(type_name)
     }
 }
 
