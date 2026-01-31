@@ -1,5 +1,3 @@
-//! Runtime values for Ivy.
-
 use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
@@ -60,6 +58,9 @@ pub enum Value {
 
     /// Module namespace (for qualified access like Math.add)
     Module { name: String },
+
+    /// Partial application: a function with some arguments already applied
+    PartialApp { func: Box<Value>, applied_args: Vec<Value> },
 }
 
 /// List structure for efficient cons/pattern matching.
@@ -105,7 +106,6 @@ pub struct BuiltinFn {
 }
 
 impl Value {
-    /// Get a string describing this value's type.
     pub fn type_name(&self) -> String {
         match self {
             Value::Unit => "()".to_string(),
@@ -122,6 +122,7 @@ impl Value {
             Value::MultiClause(mc) => format!("<function {}>", mc.name),
             Value::Builtin(b) => format!("<builtin {}>", b.name),
             Value::Module { name } => format!("<module {}>", name),
+            Value::PartialApp { .. } => "<partial>".to_string(),
         }
     }
 }
@@ -180,6 +181,9 @@ impl fmt::Display for Value {
             Value::MultiClause(mc) => write!(f, "<function {}>", mc.name),
             Value::Builtin(b) => write!(f, "<builtin {}>", b.name),
             Value::Module { name } => write!(f, "<module {}>", name),
+            Value::PartialApp { applied_args, .. } => {
+                write!(f, "<partial ({} args applied)>", applied_args.len())
+            }
         }
     }
 }
@@ -195,7 +199,6 @@ impl fmt::Debug for Value {
 }
 
 impl ListValue {
-    /// Format list contents (without brackets).
     pub fn fmt_contents(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ListValue::Nil => Ok(()),
@@ -212,7 +215,6 @@ impl ListValue {
         }
     }
 
-    /// Convert to a Vec.
     pub fn to_vec(&self) -> Vec<Value> {
         let mut result = Vec::new();
         let mut current = self;
@@ -229,7 +231,6 @@ impl ListValue {
     }
 }
 
-/// Convert a Vec to a ListValue.
 pub fn vec_to_list(values: Vec<Value>) -> Value {
     let mut list = Rc::new(ListValue::Nil);
     for val in values.into_iter().rev() {

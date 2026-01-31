@@ -72,9 +72,7 @@ mod env_tests {
         let forked = env.fork();
         forked.define("y", Value::Int(2), false);
 
-        // Original should not have y
         assert!(env.get("y").is_none());
-        // Forked should have both
         assert!(forked.get("x").is_some());
         assert!(forked.get("y").is_some());
     }
@@ -199,7 +197,6 @@ mod interpreter_tests {
 
     #[test]
     fn test_short_circuit() {
-        // Should not error because right side is not evaluated
         assert!(matches!(eval("false and (1/0 == 1);"), Ok(Value::Bool(false))));
         assert!(matches!(eval("true or (1/0 == 1);"), Ok(Value::Bool(true))));
     }
@@ -263,6 +260,35 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_partial_application() {
+        assert!(matches!(
+            eval("fn add(x, y) => x + y; let add5 = add(5); add5(3);"),
+            Ok(Value::Int(8))
+        ));
+        assert!(matches!(eval("fn add(x, y) => x + y; add(1)(2);"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn foo(a, b, c) => a + b + c; foo(1)(2)(3);"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn foo(a, b, c) => a + b + c; foo(1, 2)(3);"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn foo(a, b, c) => a + b + c; foo(1)(2, 3);"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn add(x, y) => x + y; let f = add(10); f(5);"),
+            Ok(Value::Int(15))
+        ));
+        assert!(matches!(
+            eval("fn makeAdder(x) => fn (y) => x + y; makeAdder(10)(5);"),
+            Ok(Value::Int(15))
+        ));
+    }
+
+    #[test]
     fn test_list_literal() {
         if let Ok(Value::List(l)) = eval("[1, 2, 3];") {
             assert_eq!(l.to_vec().len(), 3);
@@ -293,7 +319,6 @@ mod interpreter_tests {
 
     #[test]
     fn test_tuple_index() {
-        // Tuple indexing uses bracket notation, not dot notation
         assert!(matches!(eval("(1, 2, 3)[0];"), Ok(Value::Int(1))));
         assert!(matches!(eval("(1, 2, 3)[2];"), Ok(Value::Int(3))));
     }

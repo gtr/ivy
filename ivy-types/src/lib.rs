@@ -22,6 +22,7 @@ pub use unify::unify;
 use ivy_syntax::decl::{Decl, FnBody, FnDecl};
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::{Program, Spanned};
+use std::collections::HashMap;
 
 /// Type check an entire program.
 ///
@@ -49,7 +50,6 @@ pub fn check_program_with_env(program: &Program, checker: &mut TypeChecker, env:
 fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv) -> TypeResult<()> {
     match &decl.node {
         Decl::TypeSig { name, ty, .. } => {
-            // register the type signature in the environment
             let sig_ty = checker.type_expr_to_type(&ty.node, env);
             let final_ty = checker.finalize(&sig_ty);
             let scheme = env.generalize(&final_ty);
@@ -57,7 +57,6 @@ fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv
             Ok(())
         }
         Decl::Let { pattern, value, ty, .. } => {
-            // check if there's an existing type signature for this binding
             let existing_scheme = if let Pattern::Var(ident) = &pattern.node {
                 env.get(&ident.name).cloned()
             } else {
@@ -70,7 +69,6 @@ fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv
                 unify::unify_with_subst(&value_ty, &ann_ty, &mut checker.subst, ann.span)?;
             }
 
-            // Check against existing type signature if present
             if let Some(existing) = existing_scheme {
                 let existing_ty = checker.instantiate(&existing);
                 unify::unify_with_subst(&value_ty, &existing_ty, &mut checker.subst, decl.span)?;
@@ -88,7 +86,7 @@ fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv
             register_type_constructors(name, params, body, env, checker);
             Ok(())
         }
-        // TODO(gtr): Imports, modules, traits, impls - skip for now
+        // TODO(gtr): Imports, modules, traits, impl, etc.
         _ => Ok(()),
     }
 }
@@ -97,14 +95,9 @@ fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv
 fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv) -> TypeResult<()> {
     let fn_name = &fn_decl.name.name;
 
-    // Check if this function already exists (multi-clause function)
     let existing_scheme = env.get(fn_name).cloned();
-
     let mut param_types = Vec::new();
     let mut bindings = Vec::new();
-
-    // Create a scope for type variables to ensure T, U, E etc. are consistent
-    // across the entire function signature (parameters + return type)
     let mut type_var_scope = std::collections::HashMap::new();
 
     for param in &fn_decl.params {
@@ -191,6 +184,12 @@ fn register_type_constructors(
         Type::named_with(&name.name, type_params.iter().map(|v| Type::Var(*v)).collect())
     };
 
+    let mut param_scope: HashMap<String, Type> = params
+        .iter()
+        .zip(type_params.iter())
+        .map(|(p, &v)| (p.name.clone(), Type::Var(v)))
+        .collect();
+
     match body {
         TypeBody::Sum(variants) => {
             // Register variants in the type registry for exhaustiveness checking
@@ -206,7 +205,7 @@ fn register_type_constructors(
             for variant in variants {
                 let mut ctor_ty = result_ty.clone();
                 for field in variant.fields.iter().rev() {
-                    let field_ty = checker.type_expr_to_type(&field.node, env);
+                    let field_ty = checker.type_expr_to_type_scoped(&field.node, env, Some(&mut param_scope));
                     ctor_ty = Type::fun(field_ty, ctor_ty);
                 }
                 let scheme = if type_params.is_empty() {
@@ -220,17 +219,13 @@ fn register_type_constructors(
         }
         TypeBody::Record(fields) => {
             // Register record type info in the type registry for field validation
-            let field_types: Vec<(String, Type)> = fields
-                .iter()
-                .map(|f| (f.name.name.clone(), checker.type_expr_to_type(&f.ty.node, env)))
-                .collect();
+            let mut field_types: Vec<(String, Type)> = Vec::with_capacity(fields.len());
+            for f in fields {
+                let field_ty = checker.type_expr_to_type_scoped(&f.ty.node, env, Some(&mut param_scope));
+                field_types.push((f.name.name.clone(), field_ty));
+            }
 
-            // Store the record definition in the registry for later validation
             checker.registry.register_record(&name.name, &field_types);
-
-            // Note: We do NOT insert record types into the value environment
-            // record construction uses `TypeName { field: value }` syntax
-            // not function call syntax like variant constructors.
         }
     }
 }
