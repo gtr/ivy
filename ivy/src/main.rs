@@ -514,7 +514,7 @@ fn repl() {
                                         if let Some(expr) = expr {
                                             match type_checker.infer(expr, &type_env) {
                                                 Ok(ty) => {
-                                                    let final_ty = type_checker.finalize(&ty);
+                                                    let final_ty = type_checker.finalize(&ty).normalize();
                                                     println!(
                                                         "{}{}{} :: {}{}{}",
                                                         BLUE, expr_str, RESET, GREEN, final_ty, RESET

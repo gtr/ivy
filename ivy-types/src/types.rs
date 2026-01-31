@@ -1,6 +1,6 @@
 //! Type representation for Ivy.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 
 /// Unique identifier for type variables during inference.
@@ -9,7 +9,6 @@ pub struct TypeVar(pub u32);
 
 impl fmt::Display for TypeVar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        // Display as lowercase letters: a, b, c, ... z, a1, b1, ...
         let n = self.0 as usize;
         let letter = (b'a' + (n % 26) as u8) as char;
         if n < 26 {
@@ -131,6 +130,58 @@ impl Type {
             Type::Record(_, fields) => fields.iter().any(|(_, ty)| ty.contains_var(v)),
         }
     }
+
+    pub fn normalize(&self) -> Type {
+        let mut mapping: HashMap<TypeVar, TypeVar> = HashMap::new();
+        let mut next_id: u32 = 0;
+        self.normalize_with_mapping(&mut mapping, &mut next_id)
+    }
+
+    fn normalize_with_mapping(&self, mapping: &mut HashMap<TypeVar, TypeVar>, next_id: &mut u32) -> Type {
+        match self {
+            Type::Int => Type::Int,
+            Type::Float => Type::Float,
+            Type::Bool => Type::Bool,
+            Type::String => Type::String,
+            Type::Char => Type::Char,
+            Type::Unit => Type::Unit,
+            Type::Var(v) => {
+                let normalized = *mapping.entry(*v).or_insert_with(|| {
+                    let id = *next_id;
+                    *next_id += 1;
+                    TypeVar(id)
+                });
+                Type::Var(normalized)
+            }
+            Type::Fun(a, b) => {
+                let a_norm = a.normalize_with_mapping(mapping, next_id);
+                let b_norm = b.normalize_with_mapping(mapping, next_id);
+                Type::fun(a_norm, b_norm)
+            }
+            Type::Tuple(elems) => {
+                let elems_norm: Vec<Type> = elems
+                    .iter()
+                    .map(|e| e.normalize_with_mapping(mapping, next_id))
+                    .collect();
+                Type::Tuple(elems_norm)
+            }
+            Type::List(elem) => Type::list(elem.normalize_with_mapping(mapping, next_id)),
+            Type::Named(name, args) => {
+                let args_norm: Vec<Type> = args
+                    .iter()
+                    .map(|a| a.normalize_with_mapping(mapping, next_id))
+                    .collect();
+                Type::Named(name.clone(), args_norm)
+            }
+            Type::Record(name, fields) => {
+                let fields_norm: Vec<(String, Type)> = fields
+                    .iter()
+                    .map(|(n, ty)| (n.clone(), ty.normalize_with_mapping(mapping, next_id)))
+                    .collect();
+                Type::Record(name.clone(), fields_norm)
+            }
+        }
+    }
 }
 
 impl fmt::Display for Type {
@@ -143,13 +194,10 @@ impl fmt::Display for Type {
             Type::Char => write!(f, "Char"),
             Type::Unit => write!(f, "()"),
             Type::Var(v) => write!(f, "{}", v),
-            Type::Fun(a, b) => {
-                // Parenthesize function types on the left side
-                match a.as_ref() {
-                    Type::Fun(_, _) => write!(f, "({}) -> {}", a, b),
-                    _ => write!(f, "{} -> {}", a, b),
-                }
-            }
+            Type::Fun(a, b) => match a.as_ref() {
+                Type::Fun(_, _) => write!(f, "({}) -> {}", a, b),
+                _ => write!(f, "{} -> {}", a, b),
+            },
             Type::Tuple(elems) => {
                 write!(f, "(")?;
                 for (i, elem) in elems.iter().enumerate() {
@@ -294,5 +342,34 @@ mod tests {
         let ty = Type::fun(Type::Var(a), Type::Int);
         assert!(ty.contains_var(a));
         assert!(!ty.contains_var(b));
+    }
+
+    #[test]
+    fn test_normalize() {
+        let v100 = TypeVar(100);
+        let v200 = TypeVar(200);
+        let ty = Type::fun(
+            Type::Var(v100),
+            Type::named_with("Result", vec![Type::Var(v100), Type::Var(v200)]),
+        );
+        let normalized = ty.normalize();
+        let expected = Type::fun(
+            Type::Var(TypeVar(0)),
+            Type::named_with("Result", vec![Type::Var(TypeVar(0)), Type::Var(TypeVar(1))]),
+        );
+        assert_eq!(normalized, expected);
+        assert_eq!(normalized.to_string(), "a -> Result<a, b>");
+    }
+
+    #[test]
+    fn test_normalize_preserves_structure() {
+        let v50 = TypeVar(50);
+        let v60 = TypeVar(60);
+        let ty = Type::fun(
+            Type::Tuple(vec![Type::Var(v50), Type::Var(v60)]),
+            Type::Tuple(vec![Type::Var(v60), Type::Var(v50)]),
+        );
+        let normalized = ty.normalize();
+        assert_eq!(normalized.to_string(), "(a, b) -> (b, a)");
     }
 }
