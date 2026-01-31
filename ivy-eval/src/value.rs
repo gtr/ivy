@@ -58,6 +58,9 @@ pub enum Value {
 
     /// Module namespace (for qualified access like Math.add)
     Module { name: String },
+
+    /// Partial application: a function with some arguments already applied
+    PartialApp { func: Box<Value>, applied_args: Vec<Value> },
 }
 
 /// List structure for efficient cons/pattern matching.
@@ -119,6 +122,7 @@ impl Value {
             Value::MultiClause(mc) => format!("<function {}>", mc.name),
             Value::Builtin(b) => format!("<builtin {}>", b.name),
             Value::Module { name } => format!("<module {}>", name),
+            Value::PartialApp { .. } => "<partial>".to_string(),
         }
     }
 }
@@ -177,6 +181,9 @@ impl fmt::Display for Value {
             Value::MultiClause(mc) => write!(f, "<function {}>", mc.name),
             Value::Builtin(b) => write!(f, "<builtin {}>", b.name),
             Value::Module { name } => write!(f, "<module {}>", name),
+            Value::PartialApp { applied_args, .. } => {
+                write!(f, "<partial ({} args applied)>", applied_args.len())
+            }
         }
     }
 }

@@ -227,7 +227,6 @@ impl Interpreter {
                 self.process_import(path, items.as_ref(), decl.span)?;
             }
         }
-
         let grouped = self.collect_declarations(&program.declarations);
         let mut last_value = Value::Unit;
         for decl in grouped {
@@ -717,51 +716,69 @@ impl Interpreter {
 
     fn apply(&mut self, func: Value, args: Vec<Value>, span: Span) -> EvalResult<Value> {
         match func {
-            Value::Closure(closure) => {
-                if args.len() != closure.params.len() {
-                    return Err(EvalError::ArityMismatch {
-                        expected: closure.params.len(),
-                        got: args.len(),
-                        span,
-                    });
-                }
-
-                let saved_env = std::mem::replace(&mut self.env, closure.env.fork());
-                self.env.push_scope();
-
-                for (param, arg) in closure.params.iter().zip(args.iter()) {
-                    match match_pattern(&param.pattern.node, arg) {
-                        Some(bindings) => {
-                            for (name, val) in bindings {
-                                self.env.define(&name, val, false);
-                            }
-                        }
-                        None => {
-                            self.env = saved_env;
-                            return Err(EvalError::MatchFailed { span });
-                        }
-                    }
-                }
-
-                if let Some(ref name) = closure.name {
-                    self.env.define(name, Value::Closure(closure.clone()), false);
-                }
-
-                let result = self.eval_expr(&closure.body);
-                self.env = saved_env;
-                result
+            Value::PartialApp {
+                func: inner_func,
+                applied_args,
+            } => {
+                let mut all_args = applied_args;
+                all_args.extend(args);
+                self.apply(*inner_func, all_args, span)
             }
 
-            Value::MultiClause(multi) => self.apply_multi_clause(&multi, args, span),
+            Value::Closure(ref closure) => {
+                let arity = closure.params.len();
 
-            Value::Builtin(builtin) => {
-                if args.len() != builtin.arity {
-                    return Err(EvalError::ArityMismatch {
-                        expected: builtin.arity,
-                        got: args.len(),
-                        span,
+                if args.len() < arity {
+                    return Ok(Value::PartialApp {
+                        func: Box::new(func),
+                        applied_args: args,
                     });
                 }
+
+                if args.len() > arity {
+                    let (now, later) = args.split_at(arity);
+                    let result = self.apply_closure(closure, now.to_vec(), span)?;
+                    return self.apply(result, later.to_vec(), span);
+                }
+
+                self.apply_closure(closure, args, span)
+            }
+
+            Value::MultiClause(ref multi) => {
+                let arity = self.multi_clause_arity(&multi);
+
+                if args.len() < arity {
+                    return Ok(Value::PartialApp {
+                        func: Box::new(func),
+                        applied_args: args,
+                    });
+                }
+
+                if args.len() > arity {
+                    let (now, later) = args.split_at(arity);
+                    let result = self.apply_multi_clause(&multi, now.to_vec(), span)?;
+                    return self.apply(result, later.to_vec(), span);
+                }
+
+                self.apply_multi_clause(&multi, args, span)
+            }
+
+            Value::Builtin(ref builtin) => {
+                let arity = builtin.arity;
+
+                if args.len() < arity {
+                    return Ok(Value::PartialApp {
+                        func: Box::new(func),
+                        applied_args: args,
+                    });
+                }
+
+                if args.len() > arity {
+                    let (now, later) = args.split_at(arity);
+                    let result = (builtin.func)(now)?;
+                    return self.apply(result, later.to_vec(), span);
+                }
+
                 (builtin.func)(&args)
             }
 
@@ -780,6 +797,37 @@ impl Interpreter {
                 span,
             }),
         }
+    }
+
+    /// Apply a closure with exact number of arguments
+    fn apply_closure(&mut self, closure: &Rc<Closure>, args: Vec<Value>, span: Span) -> EvalResult<Value> {
+        let saved_env = std::mem::replace(&mut self.env, closure.env.fork());
+        self.env.push_scope();
+
+        for (param, arg) in closure.params.iter().zip(args.iter()) {
+            match match_pattern(&param.pattern.node, arg) {
+                Some(bindings) => {
+                    for (name, val) in bindings {
+                        self.env.define(&name, val, false);
+                    }
+                }
+                None => {
+                    self.env = saved_env;
+                    return Err(EvalError::MatchFailed { span });
+                }
+            }
+        }
+        if let Some(ref name) = closure.name {
+            self.env.define(name, Value::Closure(closure.clone()), false);
+        }
+        let result = self.eval_expr(&closure.body);
+        self.env = saved_env;
+        result
+    }
+
+    /// Get the arity of a multi-clause function (uses first clause)
+    fn multi_clause_arity(&self, multi: &MultiClauseFn) -> usize {
+        multi.clauses.first().map(|c| c.params.len()).unwrap_or(0)
     }
 
     fn apply_multi_clause(&mut self, multi: &MultiClauseFn, args: Vec<Value>, span: Span) -> EvalResult<Value> {
@@ -950,7 +998,6 @@ impl Interpreter {
                     }
                     pending_fns.entry(name).or_default().push(clause);
                 }
-
                 _ => {
                     for name in fn_order.drain(..) {
                         if let Some(clauses) = pending_fns.remove(&name) {
@@ -961,13 +1008,11 @@ impl Interpreter {
                 }
             }
         }
-
         for name in fn_order {
             if let Some(clauses) = pending_fns.remove(&name) {
                 result.push(GroupedDecl::MultiClauseFn { name, clauses });
             }
         }
-
         result
     }
 

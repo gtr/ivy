@@ -258,6 +258,35 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_partial_application() {
+        assert!(matches!(
+            eval("fn add(x, y) => x + y; let add5 = add(5); add5(3);"),
+            Ok(Value::Int(8))
+        ));
+        assert!(matches!(eval("fn add(x, y) => x + y; add(1)(2);"), Ok(Value::Int(3))));
+        assert!(matches!(
+            eval("fn foo(a, b, c) => a + b + c; foo(1)(2)(3);"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn foo(a, b, c) => a + b + c; foo(1, 2)(3);"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn foo(a, b, c) => a + b + c; foo(1)(2, 3);"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn add(x, y) => x + y; let f = add(10); f(5);"),
+            Ok(Value::Int(15))
+        ));
+        assert!(matches!(
+            eval("fn makeAdder(x) => fn (y) => x + y; makeAdder(10)(5);"),
+            Ok(Value::Int(15))
+        ));
+    }
+
+    #[test]
     fn test_list_literal() {
         if let Ok(Value::List(l)) = eval("[1, 2, 3];") {
             assert_eq!(l.to_vec().len(), 3);
