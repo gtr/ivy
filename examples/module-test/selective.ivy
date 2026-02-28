@@ -1,4 +1,0 @@
-import Math.{add};
-
--- Can use add directly
-println(show(add(10, 20)));

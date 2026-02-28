@@ -1,0 +1,40 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : Random
+--- Author       : Ivy Language Team
+---
+--- Random number generation for the Ivy programming language.
+---
+--------------------------------------------------------------------------------
+
+module Random;
+
+-- Generate a random integer in the range [min, max] (inclusive)
+pub fn random(min: Int, max: Int): Int => __random(min, max);
+
+-- Generate a random integer in the range [0, max] (inclusive)
+pub fn randomTo(max: Int): Int => __random(0, max);
+
+-- Generate a random integer in the range [0, max) (exclusive)
+pub fn randomBelow(max: Int): Int => __random(0, max - 1);
+
+-- Generate a random boolean
+pub fn randomBool(): Bool => __random(0, 1) == 1;
+
+-- Pick a random element from a non-empty list
+pub fn choice(xs: [a]): a => match xs with
+  | [] -> choice([])  -- Will fail at runtime
+  | _ -> nth(xs, __random(0, listLength(xs) - 1))
+end;
+
+fn listLength(xs: [a]): Int => match xs with
+  | [] -> 0
+  | [_ | rest] -> 1 + listLength(rest)
+end;
+
+fn nth :: [a] -> Int -> Option<a>;
+fn nth(xs: [a], n: Int): Option<a> => match xs with
+  | [x | rest] -> if n == 0 then Some(x) else nth(rest, n - 1)
+  | [] -> None
+end;
+

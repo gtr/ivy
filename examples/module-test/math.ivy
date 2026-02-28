@@ -1,5 +1,0 @@
-module Math;
-
-pub fn add(x, y) => x + y;
-pub fn sub(x, y) => x - y;
-fn helper(x) => x;  -- private

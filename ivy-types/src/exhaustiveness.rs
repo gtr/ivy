@@ -125,12 +125,12 @@ fn is_constructor_covered(ctor_name: &str, patterns: &[&Pattern], registry: &Typ
 }
 
 /// Check if a single pattern covers a constructor.
-fn covers_constructor(pattern: &Pattern, ctor_name: &str, registry: &TypeRegistry) -> bool {
+fn covers_constructor(pattern: &Pattern, ctor_name: &str, _registry: &TypeRegistry) -> bool {
     match pattern {
         Pattern::Wildcard | Pattern::Var(_) => true,
         Pattern::Constructor { name, .. } => name.name == ctor_name,
         Pattern::Or { left, right } => {
-            covers_constructor(&left.node, ctor_name, registry) || covers_constructor(&right.node, ctor_name, registry)
+            covers_constructor(&left.node, ctor_name, _registry) || covers_constructor(&right.node, ctor_name, _registry)
         }
         _ => false,
     }
@@ -220,11 +220,10 @@ fn find_missing_list(patterns: &[&Pattern]) -> Vec<String> {
         match pattern {
             Pattern::List { elements } if elements.is_empty() => has_empty = true,
             Pattern::List { elements } if !elements.is_empty() => {
-                if elements.len() == 1 {
-                    if matches!(&elements[0].node, Pattern::Cons { .. }) {
+                if elements.len() == 1
+                    && matches!(&elements[0].node, Pattern::Cons { .. }) {
                         has_cons = true;
                     }
-                }
             }
             Pattern::Cons { .. } => has_cons = true,
             Pattern::Or { left, right } => {

@@ -1,0 +1,136 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : Math
+--- Author       : Ivy Language Team
+---
+--- Mathematical functions for the Ivy programming language.
+--- This module wraps low-level intrinsics to provide user-friendly math functions.
+---
+--------------------------------------------------------------------------------
+
+module Math;
+
+-- =============================================================================
+-- Basic Numeric Functions
+-- =============================================================================
+
+-- Absolute value
+pub fn abs(x: Int): Int => __abs(x);
+
+-- Minimum of two integers
+pub fn min(x: Int, y: Int): Int => __min(x, y);
+
+-- Maximum of two integers
+pub fn max(x: Int, y: Int): Int => __max(x, y);
+
+-- Sign function: returns -1, 0, or 1
+pub fn sign(x: Int): Int =>
+  if x > 0 then 1
+  else if x < 0 then -1
+  else 0;
+
+-- Clamp a value between min and max
+pub fn clamp(value: Int, minVal: Int, maxVal: Int): Int =>
+  if value < minVal then minVal
+  else if value > maxVal then maxVal
+  else value;
+
+-- =============================================================================
+-- Power and Root Functions
+-- =============================================================================
+
+-- Power: base^exponent (for floats)
+pub fn pow(base: Float, exp: Float): Float => __pow(base, exp);
+
+-- Square root
+pub fn sqrt(x: Float): Float => __sqrt(x);
+
+-- Integer power (recursive)
+pub fn powInt(base: Int, exp: Int): Int =>
+  if exp == 0 then 1
+  else if exp == 1 then base
+  else base * powInt(base, exp - 1);
+
+-- =============================================================================
+-- Rounding Functions
+-- =============================================================================
+
+-- Floor: round down to nearest integer
+pub fn floor(x: Float): Int => __floor(x);
+
+-- Ceiling: round up to nearest integer
+pub fn ceil(x: Float): Int => __ceil(x);
+
+-- Round to nearest integer
+pub fn round(x: Float): Int => __round(x);
+
+-- =============================================================================
+-- Integer Arithmetic
+-- =============================================================================
+
+-- Greatest common divisor (Euclidean algorithm)
+pub fn gcd(a: Int, b: Int): Int =>
+  if b == 0 then abs(a)
+  else gcd(b, a % b);
+
+-- Least common multiple
+pub fn lcm(a: Int, b: Int): Int => abs(a * b) / gcd(a, b);
+
+-- Factorial
+pub fn factorial(n: Int): Int =>
+  if n <= 1 then 1
+  else n * factorial(n - 1);
+
+-- Fibonacci
+pub fn fibonacci(n: Int): Int =>
+  if n <= 0 then 0
+  else if n == 1 then 1
+  else fibonacci(n - 1) + fibonacci(n - 2);
+
+-- =============================================================================
+-- Predicates
+-- =============================================================================
+
+-- Check if a number is even
+pub fn even?(n: Int): Bool => n % 2 == 0;
+
+-- Check if a number is odd
+pub fn odd?(n: Int): Bool => n % 2 != 0;
+
+-- Check if a number is positive
+pub fn positive?(n: Int): Bool => n > 0;
+
+-- Check if a number is negative
+pub fn negative?(n: Int): Bool => n < 0;
+
+-- Check if a number is zero
+pub fn zero?(n: Int): Bool => n == 0;
+
+-- Helper for primality test (must be defined before prime?)
+fn primeHelper(n: Int, divisor: Int): Bool =>
+  if divisor * divisor > n then true
+  else if n % divisor == 0 then false
+  else primeHelper(n, divisor + 1);
+
+-- Primality test
+pub fn prime?(n: Int): Bool =>
+  if n < 2 then false
+  else primeHelper(n, 2);
+
+-- =============================================================================
+-- Sum and Product
+-- =============================================================================
+
+-- Sum of integers from 1 to n
+pub fn sumTo(n: Int): Int => n * (n + 1) / 2;
+
+-- Sum of integers in a range [start, stop]
+pub fn sumRange(start: Int, stop: Int): Int =>
+  if start > stop then 0
+  else sumTo(stop) - sumTo(start - 1);
+
+-- Product of integers in a range [start, stop]
+pub fn productRange(start: Int, stop: Int): Int =>
+  if start > stop then 1
+  else start * productRange(start + 1, stop);
+

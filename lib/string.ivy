@@ -1,0 +1,106 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : String
+--- Author       : Gerardo Torres Castro
+---
+--- String manipulation functions for the Ivy programming language.
+--- This module wraps low-level intrinsics to provide user-friendly string functions.
+---
+--------------------------------------------------------------------------------
+
+module String;
+
+-- =============================================================================
+-- Basic String Functions
+-- =============================================================================
+
+-- Get the length of a string
+fn length(s: String): Int => __strLength(s);
+
+-- Trim whitespace from both ends of a string
+fn trim(s: String): String => __strTrim(s);
+
+-- Check if a string is empty
+fn empty?(s: String): Bool => __strLength(s) == 0;
+
+-- Check if a string is not empty
+fn notEmpty?(s: String): Bool => __strLength(s) > 0;
+
+-- =============================================================================
+-- Substring Operations
+-- =============================================================================
+
+-- Check if a string contains a substring
+fn contains(haystack: String, needle: String): Bool => __strContains(haystack, needle);
+
+-- Get a substring from start index to end index (exclusive)
+fn substring(s: String, start: Int, end: Int): String => __strSubstring(s, start, end);
+
+-- Check if a string starts with a prefix
+fn startsWith(s: String, prefix: String): Bool => __strStartsWith(s, prefix);
+
+-- Check if a string ends with a suffix
+fn endsWith(s: String, suffix: String): Bool => __strEndsWith(s, suffix);
+
+-- =============================================================================
+-- Case Conversion
+-- =============================================================================
+
+-- Convert a string to uppercase
+fn toUpper(s: String): String => __strToUpper(s);
+
+-- Convert a string to lowercase
+fn toLower(s: String): String => __strToLower(s);
+
+-- =============================================================================
+-- Search and Replace
+-- =============================================================================
+
+-- Replace all occurrences of a substring
+fn replace(s: String, from: String, to: String): String => __strReplace(s, from, to);
+
+-- Split a string by a delimiter
+fn split(s: String, delimiter: String): [String] => __strSplit(s, delimiter);
+
+-- =============================================================================
+-- String Building
+-- =============================================================================
+
+-- Join a list of strings with a separator
+fn join(xs: [String], sep: String): String => match xs with
+  | [] -> ""
+  | [x] -> x
+  | [x | rest] -> x ++ sep ++ join(rest, sep)
+end;
+
+-- Repeat a string n times
+fn repeat(s: String, n: Int): String =>
+  if n <= 0 then ""
+  else s ++ repeat(s, n - 1);
+
+-- =============================================================================
+-- Character Operations
+-- =============================================================================
+
+-- Get the first character of a string (as a string)
+fn first(s: String): Option<String> =>
+  if __strLength(s) == 0 then None
+  else Some(__strSubstring(s, 0, 1));
+
+-- Get the last character of a string (as a string)
+fn last(s: String): Option<String> =>
+  let len = __strLength(s);
+  if len == 0 then None
+  else Some(__strSubstring(s, len - 1, len));
+
+-- =============================================================================
+-- Predicates
+-- =============================================================================
+
+-- Check if a string consists only of whitespace
+fn blank?(s: String): Bool => __strLength(__strTrim(s)) == 0;
+
+-- Check if two strings are equal (case-insensitive)
+fn equalsIgnoreCase(s1: String, s2: String): Bool =>
+  __strToLower(s1) == __strToLower(s2);
+

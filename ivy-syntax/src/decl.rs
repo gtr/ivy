@@ -4,13 +4,25 @@ use crate::pattern::Pattern;
 use crate::span::{Span, Spanned};
 use crate::types::TypeExpr;
 
+/// Import kind for the different import syntaxes.
+#[derive(Debug, Clone)]
+pub enum ImportKind {
+    Qualified,
+    Alias(Ident),
+    All,
+    Items(Vec<Ident>),
+}
+
 #[derive(Debug, Clone)]
 pub enum Decl {
-    Module { name: Ident },
+    Module {
+        name: Ident,
+    },
 
+    /// Import declaration with Python-style syntax
     Import {
         path: Vec<Ident>,
-        items: Option<Vec<Ident>>,
+        kind: ImportKind,
     },
 
     /// Type definition: `type Option<a> = | None | Some(a);`

@@ -1,0 +1,43 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : File
+--- Author       : Gerardo Torres Castro
+---
+--- File I/O functions for the Ivy programming language.
+--- This module wraps low-level intrinsics to provide user-friendly file operations.
+---
+--------------------------------------------------------------------------------
+
+module File;
+
+-- Join lines with newlines
+fn joinLines(xs: [String]): String => match xs with
+  | [] -> ""
+  | [x] -> x
+  | [x | rest] -> x ++ "\n" ++ joinLines(rest)
+end;
+
+-- Read the entire contents of a file as a string
+pub fn readFile(path: String): String => __readFile(path);
+
+-- Read a file and split into lines
+pub fn readLines(path: String): [String] => __strSplit(__readFile(path), "\n");
+
+-- Write a string to a file (overwrites if exists)
+pub fn writeFile(path: String, content: String): () => __writeFile(path, content);
+
+-- Append a string to a file
+pub fn appendFile(path: String, content: String): () => __appendFile(path, content);
+
+-- Write a list of lines to a file
+pub fn writeLines(path: String, lines: [String]): () => do {
+  let content = joinLines(lines);
+  __writeFile(path, content)
+};
+
+-- Append a line to a file
+pub fn appendLine(path: String, line: String): () =>
+  __appendFile(path, line ++ "\n");
+
+-- Check if a file exists
+pub fn exists(path: String): Bool => __fileExists(path);
