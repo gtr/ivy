@@ -1,6 +1,4 @@
-//! Ivy Types
-//!
-//! Type system for the Ivy programming language.
+#![allow(clippy::result_large_err)]
 
 pub mod env;
 pub mod error;
@@ -10,44 +8,52 @@ pub mod registry;
 pub mod subst;
 pub mod types;
 pub mod unify;
-
 pub use env::{TypeEnv, TypeVarGen};
 pub use error::{TypeError, TypeErrorKind, TypeResult};
 pub use infer::TypeChecker;
+use ivy_syntax::decl::{Decl, FnBody, FnDecl};
+use ivy_syntax::pattern::Pattern;
+use ivy_syntax::{Program, Spanned};
 pub use registry::{TypeRegistry, VariantInfo};
+use std::collections::{HashMap, HashSet};
+use std::fs;
+use std::path::PathBuf;
 pub use subst::Subst;
 pub use types::{Scheme, Type, TypeVar};
 pub use unify::unify;
 
-use ivy_syntax::decl::{Decl, FnBody, FnDecl};
-use ivy_syntax::pattern::Pattern;
-use ivy_syntax::{Program, Spanned};
-use std::collections::HashMap;
-
-/// Type check an entire program.
-///
-/// Returns Ok(()) if the program type checks and all pattern matches are exhaustive.
+/// Type check an entire program (without import support,use check_program_with_paths for imports).
 pub fn check_program(program: &Program) -> TypeResult<()> {
     let mut env = TypeEnv::with_builtins();
     let mut checker = TypeChecker::new();
 
     for decl in &program.declarations {
-        check_decl(&mut checker, decl, &mut env)?;
+        check_decl(&mut checker, decl, &mut env, &[])?;
     }
 
     Ok(())
 }
 
-/// Type check a program with a given type environment.
-pub fn check_program_with_env(program: &Program, checker: &mut TypeChecker, env: &mut TypeEnv) -> TypeResult<()> {
+/// Type check a program with a given type environment and search paths for imports.
+pub fn check_program_with_env(
+    program: &Program,
+    checker: &mut TypeChecker,
+    env: &mut TypeEnv,
+    search_paths: &[PathBuf],
+) -> TypeResult<()> {
     for decl in &program.declarations {
-        check_decl(checker, decl, env)?;
+        check_decl(checker, decl, env, search_paths)?;
     }
     Ok(())
 }
 
-/// Type check a single declaration.
-fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv) -> TypeResult<()> {
+/// Type check a single declaration
+fn check_decl(
+    checker: &mut TypeChecker,
+    decl: &Spanned<Decl>,
+    env: &mut TypeEnv,
+    search_paths: &[PathBuf],
+) -> TypeResult<()> {
     match &decl.node {
         Decl::TypeSig { name, ty, .. } => {
             let sig_ty = checker.type_expr_to_type(&ty.node, env);
@@ -86,9 +92,142 @@ fn check_decl(checker: &mut TypeChecker, decl: &Spanned<Decl>, env: &mut TypeEnv
             register_type_constructors(name, params, body, env, checker);
             Ok(())
         }
-        // TODO(gtr): Imports, modules, traits, impl, etc.
+        Decl::Import { path, kind } => check_import(checker, env, search_paths, path, kind),
+        // TODO(gtr): modules, traits, impl, etc.
         _ => Ok(()),
     }
+}
+
+/// Type check an import declaration.
+fn check_import(
+    checker: &mut TypeChecker,
+    env: &mut TypeEnv,
+    search_paths: &[PathBuf],
+    path: &[ivy_syntax::Ident],
+    kind: &ivy_syntax::decl::ImportKind,
+) -> TypeResult<()> {
+    if path.is_empty() {
+        return Ok(());
+    }
+
+    let span = path[0].span;
+    let path_strings: Vec<String> = path.iter().map(|id| id.name.clone()).collect();
+    let module_name = path_strings.join(".");
+
+    // Check if module already loaded
+    if env.get_module(&module_name).is_some() {
+        // Module already loaded, just handle the import kind
+        return handle_import_kind(env, &module_name, kind);
+    }
+
+    // Check for circular import
+    if checker.loaded_modules.contains(&module_name) {
+        let cycle: Vec<String> = checker.loaded_modules.iter().cloned().collect();
+        return Err(TypeError::circular_import(&module_name, cycle, span));
+    }
+
+    // Mark module as being loaded
+    checker.loaded_modules.insert(module_name.clone());
+
+    // Load and type check the module
+    let file_path = match resolve_module_path(&path_strings, search_paths) {
+        Some(p) => p,
+        None => {
+            checker.loaded_modules.remove(&module_name);
+            return Err(TypeError::module_not_found(&module_name, span));
+        }
+    };
+    let source = match fs::read_to_string(&file_path) {
+        Ok(s) => s,
+        Err(e) => {
+            checker.loaded_modules.remove(&module_name);
+            return Err(TypeError::module_io_error(&module_name, &e.to_string(), span));
+        }
+    };
+    let module_program = match ivy_parse::parse(&source) {
+        Ok(p) => p,
+        Err(e) => {
+            checker.loaded_modules.remove(&module_name);
+            return Err(TypeError::module_parse_error(&module_name, &e.to_string(), span));
+        }
+    };
+
+    let exports = match type_check_module(&module_program, checker, search_paths) {
+        Ok(e) => e,
+        Err(e) => {
+            checker.loaded_modules.remove(&module_name);
+            let path_str = file_path.to_string_lossy();
+            return Err(TypeError::module_type_error(&module_name, &path_str, &source, e));
+        }
+    };
+
+    // Done loading this module
+    checker.loaded_modules.remove(&module_name);
+    env.insert_module(module_name.clone(), exports);
+
+    handle_import_kind(env, &module_name, kind)
+}
+
+/// Handle the different import kinds after module is loaded.
+fn handle_import_kind(env: &mut TypeEnv, module_name: &str, kind: &ivy_syntax::decl::ImportKind) -> TypeResult<()> {
+    use ivy_syntax::decl::ImportKind;
+
+    match kind {
+        ImportKind::Qualified => Ok(()),
+        ImportKind::Alias(alias) => {
+            if let Some(exports) = env.get_module(module_name).cloned() {
+                env.insert_module(alias.name.clone(), exports);
+            }
+            Ok(())
+        }
+        ImportKind::All => {
+            if let Some(module_exports) = env.get_module(module_name).cloned() {
+                for (name, scheme) in module_exports {
+                    env.insert(name, scheme);
+                }
+            }
+            Ok(())
+        }
+        ImportKind::Items(items) => {
+            if let Some(module_exports) = env.get_module(module_name) {
+                let exports_to_add: Vec<_> = items
+                    .iter()
+                    .filter_map(|name| module_exports.get(&name.name).map(|s| (name.name.clone(), s.clone())))
+                    .collect();
+
+                for (name, scheme) in exports_to_add {
+                    env.insert(name, scheme);
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+/// Resolve a module path to a file path.
+fn resolve_module_path(module_path: &[String], search_paths: &[PathBuf]) -> Option<PathBuf> {
+    if module_path.is_empty() {
+        return None;
+    }
+    let lowercase_path: PathBuf = module_path
+        .iter()
+        .map(|s| s.to_lowercase())
+        .collect::<Vec<_>>()
+        .join("/")
+        .into();
+    let original_path: PathBuf = module_path.join("/").into();
+    for base in search_paths {
+        let path1 = base.join(&lowercase_path).with_extension("ivy");
+        if path1.exists() {
+            return Some(path1);
+        }
+        let path2 = base.join(&original_path).with_extension("ivy");
+        if path2.exists() {
+            return Some(path2);
+        }
+    }
+
+    None
 }
 
 /// Type check a function declaration.
@@ -167,6 +306,88 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
     Ok(())
 }
 
+/// Type check a module's program and collect the types of public exports.
+///
+/// Returns a map of export name -> type scheme for all public declarations.
+pub fn type_check_module(
+    program: &Program,
+    checker: &mut TypeChecker,
+    search_paths: &[PathBuf],
+) -> TypeResult<HashMap<String, Scheme>> {
+    let mut public_names = HashSet::new();
+    for decl in &program.declarations {
+        match &decl.node {
+            Decl::Fn(fn_decl) if fn_decl.is_pub => {
+                public_names.insert(fn_decl.name.name.clone());
+            }
+            Decl::Let {
+                is_pub: true, pattern, ..
+            } => {
+                collect_pattern_names(&pattern.node, &mut public_names);
+            }
+            Decl::Type {
+                is_pub: true,
+                name,
+                body,
+                ..
+            } => {
+                public_names.insert(name.name.clone());
+                if let ivy_syntax::TypeBody::Sum(variants) = body {
+                    for variant in variants {
+                        public_names.insert(variant.name.name.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    let mut module_env = TypeEnv::with_builtins();
+    for decl in &program.declarations {
+        check_decl(checker, decl, &mut module_env, search_paths)?;
+    }
+    let mut exports = HashMap::new();
+    for name in public_names {
+        if let Some(scheme) = module_env.get(&name) {
+            exports.insert(name, scheme.clone());
+        }
+    }
+
+    Ok(exports)
+}
+
+/// Collect variable names from a pattern.
+fn collect_pattern_names(pattern: &Pattern, names: &mut HashSet<String>) {
+    match pattern {
+        Pattern::Var(ident) => {
+            names.insert(ident.name.clone());
+        }
+        Pattern::Tuple { elements } => {
+            for pat in elements {
+                collect_pattern_names(&pat.node, names);
+            }
+        }
+        Pattern::List { elements } => {
+            for pat in elements {
+                collect_pattern_names(&pat.node, names);
+            }
+        }
+        Pattern::Cons { head, tail } => {
+            collect_pattern_names(&head.node, names);
+            collect_pattern_names(&tail.node, names);
+        }
+        Pattern::Record { fields, .. } => {
+            for field in fields {
+                if let Some(pat) = &field.pattern {
+                    collect_pattern_names(&pat.node, names);
+                } else {
+                    names.insert(field.name.name.clone());
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Register type constructors from a type definition.
 fn register_type_constructors(
     name: &ivy_syntax::ast::Ident,
@@ -192,7 +413,6 @@ fn register_type_constructors(
 
     match body {
         TypeBody::Sum(variants) => {
-            // Register variants in the type registry for exhaustiveness checking
             let variant_infos: Vec<VariantInfo> = variants
                 .iter()
                 .map(|v| VariantInfo {
@@ -201,7 +421,6 @@ fn register_type_constructors(
                 })
                 .collect();
             checker.registry.register_from_variants(&name.name, &variant_infos);
-
             for variant in variants {
                 let mut ctor_ty = result_ty.clone();
                 for field in variant.fields.iter().rev() {

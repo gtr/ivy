@@ -111,4 +111,16 @@ impl Env {
         names.dedup();
         names
     }
+
+    /// List all bindings (name, value) across all scopes.
+    pub fn all_bindings(&self) -> Vec<(String, Value)> {
+        let scopes = self.scopes.borrow();
+        let mut bindings: HashMap<String, Value> = HashMap::new();
+        for scope in scopes.iter() {
+            for (name, binding) in &scope.bindings {
+                bindings.insert(name.clone(), binding.value.clone());
+            }
+        }
+        bindings.into_iter().collect()
+    }
 }

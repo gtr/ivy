@@ -66,6 +66,8 @@ pub enum TokenKind {
     Trait,
     Impl,
     Import,
+    From,
+    As,
     Module,
     Pub,
     True,
@@ -162,6 +164,8 @@ impl TokenKind {
                 | TokenKind::Trait
                 | TokenKind::Impl
                 | TokenKind::Import
+                | TokenKind::From
+                | TokenKind::As
                 | TokenKind::Module
                 | TokenKind::Pub
                 | TokenKind::True
@@ -189,6 +193,8 @@ impl TokenKind {
             "trait" => Some(TokenKind::Trait),
             "impl" => Some(TokenKind::Impl),
             "import" => Some(TokenKind::Import),
+            "from" => Some(TokenKind::From),
+            "as" => Some(TokenKind::As),
             "module" => Some(TokenKind::Module),
             "pub" => Some(TokenKind::Pub),
             "true" => Some(TokenKind::True),
@@ -225,6 +231,8 @@ impl std::fmt::Display for TokenKind {
             TokenKind::Trait => "'trait'",
             TokenKind::Impl => "'impl'",
             TokenKind::Import => "'import'",
+            TokenKind::From => "'from'",
+            TokenKind::As => "'as'",
             TokenKind::Module => "'module'",
             TokenKind::Pub => "'pub'",
             TokenKind::True => "'true'",

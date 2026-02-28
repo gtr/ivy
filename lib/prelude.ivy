@@ -1,9 +1,8 @@
 --------------------------------------------------------------------------------
 ---
---- Package      : prelude
+--- Module       : prelude
 --- Author       : Gerardo Torres Castro
 --- Date         : August 30, 2022
---- License      : GNU Public License
 ---
 --- The Ivy programming language standard prelude, which is automatically loaded
 --- for all ivy programs invoked from the ivy REPL and the ivy compiler. 
@@ -21,9 +20,7 @@ module Prelude;
 -- =============================================================================
 
 -- These types are built into the runtime. They cannot be defined in Ivy.
--- Phase 1: Bool, Int, String, ()
--- Phase 3: Char
--- Future:  Float
+-- Bool, Int, Float, String, Char, ()
 
 -- =============================================================================
 -- Core Sum Types
@@ -55,7 +52,6 @@ type Result<T, E> =
 -- =============================================================================
 
 -- Show: Convert a value to its string representation.
-trait Show<a> {
   fn show(x: a): String;
 }
 
@@ -256,7 +252,10 @@ fn drop(n: Int, [_ | xs]): [a] => drop(n - 1, xs);
 -- print: a -> ()
 -- println: a -> ()
 -- show: a -> String
--- (readLine and readInt are not yet implemented)
+--
+-- Additional I/O intrinsics available:
+-- __readLine: () -> String
+-- __readInt: String -> Int
 
 -- =============================================================================
 -- Utility Functions

@@ -137,7 +137,11 @@ mod parser_tests {
     #[test]
     fn test_parse_import() {
         assert!(parse("import Math;").is_ok());
-        assert!(parse("import Math.{add, sub};").is_ok());
+        assert!(parse("import Math as M;").is_ok());
+        assert!(parse("from Math import *;").is_ok());
+        assert!(parse("from Math import add, sub;").is_ok());
+        assert!(parse("import Foo.Bar.Baz;").is_ok());
+        assert!(parse("from Foo.Bar import baz;").is_ok());
     }
 
     #[test]
@@ -219,9 +223,7 @@ mod parser_tests {
 
     #[test]
     fn test_parse_operator_precedence() {
-        // 1 + 2 * 3 should parse as 1 + (2 * 3)
         assert!(parse("1 + 2 * 3;").is_ok());
-        // 1 * 2 + 3 should parse as (1 * 2) + 3
         assert!(parse("1 * 2 + 3;").is_ok());
     }
 

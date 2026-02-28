@@ -1,6 +1,6 @@
 //! Main evaluator for Ivy.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
 
@@ -21,6 +21,8 @@ pub struct Interpreter {
     loader: ModuleLoader,
     /// Loaded module namespaces: module_name -> (name -> value).
     modules: HashMap<String, HashMap<String, Value>>,
+    /// Modules currently being loaded (for cycle detection).
+    loaded_modules: HashSet<String>,
 }
 
 impl Default for Interpreter {
@@ -34,41 +36,75 @@ impl Interpreter {
     pub fn new() -> Self {
         let env = Env::new();
 
+        // True builtins (user-facing, always available)
+        env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
+        env.define("println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
+        env.define("show", Value::Builtin(BUILTIN_SHOW.clone()), false);
+
+        // I/O intrinsics
         env.define("__print", Value::Builtin(BUILTIN_PRINT.clone()), false);
         env.define("__println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
         env.define("__intToString", Value::Builtin(BUILTIN_INT_TO_STRING.clone()), false);
         env.define("__readLine", Value::Builtin(BUILTIN_READ_LINE.clone()), false);
         env.define("__readInt", Value::Builtin(BUILTIN_READ_INT.clone()), false);
 
-        env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
-        env.define("println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
-        env.define("show", Value::Builtin(BUILTIN_SHOW.clone()), false);
+        // Conversion intrinsics (wrapped by lib/Convert.ivy)
+        env.define("__floatFromInt", Value::Builtin(BUILTIN_FLOAT_FROM_INT.clone()), false);
+        env.define("__floatToInt", Value::Builtin(BUILTIN_FLOAT_TO_INT.clone()), false);
+        env.define(
+            "__floatToString",
+            Value::Builtin(BUILTIN_FLOAT_TO_STRING.clone()),
+            false,
+        );
+        env.define("__stringToInt", Value::Builtin(BUILTIN_STRING_TO_INT.clone()), false);
+        env.define(
+            "__stringToFloat",
+            Value::Builtin(BUILTIN_STRING_TO_FLOAT.clone()),
+            false,
+        );
+        env.define(
+            "__tryStringToInt",
+            Value::Builtin(BUILTIN_TRY_STRING_TO_INT.clone()),
+            false,
+        );
+        env.define(
+            "__tryStringToFloat",
+            Value::Builtin(BUILTIN_TRY_STRING_TO_FLOAT.clone()),
+            false,
+        );
 
-        env.define("abs", Value::Builtin(BUILTIN_ABS.clone()), false);
-        env.define("min", Value::Builtin(BUILTIN_MIN.clone()), false);
-        env.define("max", Value::Builtin(BUILTIN_MAX.clone()), false);
-        env.define("pow", Value::Builtin(BUILTIN_POW.clone()), false);
-        env.define("sqrt", Value::Builtin(BUILTIN_SQRT.clone()), false);
-        env.define("floor", Value::Builtin(BUILTIN_FLOOR.clone()), false);
-        env.define("ceil", Value::Builtin(BUILTIN_CEIL.clone()), false);
-        env.define("round", Value::Builtin(BUILTIN_ROUND.clone()), false);
-        env.define("random", Value::Builtin(BUILTIN_RANDOM.clone()), false);
+        // Math intrinsics (wrapped by lib/Math.ivy)
+        env.define("__abs", Value::Builtin(BUILTIN_ABS.clone()), false);
+        env.define("__min", Value::Builtin(BUILTIN_MIN.clone()), false);
+        env.define("__max", Value::Builtin(BUILTIN_MAX.clone()), false);
+        env.define("__pow", Value::Builtin(BUILTIN_POW.clone()), false);
+        env.define("__sqrt", Value::Builtin(BUILTIN_SQRT.clone()), false);
+        env.define("__floor", Value::Builtin(BUILTIN_FLOOR.clone()), false);
+        env.define("__ceil", Value::Builtin(BUILTIN_CEIL.clone()), false);
+        env.define("__round", Value::Builtin(BUILTIN_ROUND.clone()), false);
+        env.define("__random", Value::Builtin(BUILTIN_RANDOM.clone()), false);
 
-        env.define("strLength", Value::Builtin(BUILTIN_STR_LENGTH.clone()), false);
-        env.define("strTrim", Value::Builtin(BUILTIN_STR_TRIM.clone()), false);
-        env.define("strContains", Value::Builtin(BUILTIN_STR_CONTAINS.clone()), false);
-        env.define("strSubstring", Value::Builtin(BUILTIN_STR_SUBSTRING.clone()), false);
-        env.define("strSplit", Value::Builtin(BUILTIN_STR_SPLIT.clone()), false);
-        env.define("strToUpper", Value::Builtin(BUILTIN_STR_TO_UPPER.clone()), false);
-        env.define("strToLower", Value::Builtin(BUILTIN_STR_TO_LOWER.clone()), false);
-        env.define("strStartsWith", Value::Builtin(BUILTIN_STR_STARTS_WITH.clone()), false);
-        env.define("strEndsWith", Value::Builtin(BUILTIN_STR_ENDS_WITH.clone()), false);
-        env.define("strReplace", Value::Builtin(BUILTIN_STR_REPLACE.clone()), false);
+        // String intrinsics (wrapped by lib/String.ivy)
+        env.define("__strLength", Value::Builtin(BUILTIN_STR_LENGTH.clone()), false);
+        env.define("__strTrim", Value::Builtin(BUILTIN_STR_TRIM.clone()), false);
+        env.define("__strContains", Value::Builtin(BUILTIN_STR_CONTAINS.clone()), false);
+        env.define("__strSubstring", Value::Builtin(BUILTIN_STR_SUBSTRING.clone()), false);
+        env.define("__strSplit", Value::Builtin(BUILTIN_STR_SPLIT.clone()), false);
+        env.define("__strToUpper", Value::Builtin(BUILTIN_STR_TO_UPPER.clone()), false);
+        env.define("__strToLower", Value::Builtin(BUILTIN_STR_TO_LOWER.clone()), false);
+        env.define(
+            "__strStartsWith",
+            Value::Builtin(BUILTIN_STR_STARTS_WITH.clone()),
+            false,
+        );
+        env.define("__strEndsWith", Value::Builtin(BUILTIN_STR_ENDS_WITH.clone()), false);
+        env.define("__strReplace", Value::Builtin(BUILTIN_STR_REPLACE.clone()), false);
 
-        env.define("readFile", Value::Builtin(BUILTIN_READ_FILE.clone()), false);
-        env.define("writeFile", Value::Builtin(BUILTIN_WRITE_FILE.clone()), false);
-        env.define("appendFile", Value::Builtin(BUILTIN_APPEND_FILE.clone()), false);
-        env.define("fileExists", Value::Builtin(BUILTIN_FILE_EXISTS.clone()), false);
+        // File I/O intrinsics (wrapped by lib/File.ivy)
+        env.define("__readFile", Value::Builtin(BUILTIN_READ_FILE.clone()), false);
+        env.define("__writeFile", Value::Builtin(BUILTIN_WRITE_FILE.clone()), false);
+        env.define("__appendFile", Value::Builtin(BUILTIN_APPEND_FILE.clone()), false);
+        env.define("__fileExists", Value::Builtin(BUILTIN_FILE_EXISTS.clone()), false);
 
         env.define(
             "None",
@@ -131,6 +167,7 @@ impl Interpreter {
             env,
             loader: ModuleLoader::new(search_paths),
             modules: HashMap::new(),
+            loaded_modules: HashSet::new(),
         };
 
         interp.load_prelude();
@@ -150,49 +187,47 @@ impl Interpreter {
                 .and_then(|p| p.parent().and_then(|d| d.parent().map(|d| d.join("lib/prelude.ivy")))),
         ];
 
-        for path_opt in prelude_paths {
-            if let Some(path) = path_opt {
-                if path.exists() {
-                    if let Ok(source) = std::fs::read_to_string(&path) {
-                        if let Ok(program) = ivy_parse::parse(&source) {
-                            let mut public_names = std::collections::HashSet::new();
-                            for decl in &program.declarations {
-                                match &decl.node {
-                                    Decl::Fn(fn_decl) if fn_decl.is_pub => {
-                                        public_names.insert(fn_decl.name.name.clone());
-                                    }
-                                    Decl::Let {
-                                        is_pub: true, pattern, ..
-                                    } => {
-                                        if let ivy_syntax::Pattern::Var(ident) = &pattern.node {
-                                            public_names.insert(ident.name.clone());
-                                        }
-                                    }
-                                    Decl::Type {
-                                        is_pub: true,
-                                        name,
-                                        body,
-                                        ..
-                                    } => {
-                                        public_names.insert(name.name.clone());
-                                        if let ivy_syntax::TypeBody::Sum(variants) = body {
-                                            for variant in variants {
-                                                public_names.insert(variant.name.name.clone());
-                                            }
-                                        }
-                                    }
-                                    _ => {}
+        for path in prelude_paths.into_iter().flatten() {
+            if path.exists() {
+                if let Ok(source) = std::fs::read_to_string(&path) {
+                    if let Ok(program) = ivy_parse::parse(&source) {
+                        let mut public_names = std::collections::HashSet::new();
+                        for decl in &program.declarations {
+                            match &decl.node {
+                                Decl::Fn(fn_decl) if fn_decl.is_pub => {
+                                    public_names.insert(fn_decl.name.name.clone());
                                 }
-                            }
-
-                            let grouped = self.collect_declarations(&program.declarations);
-                            for decl in grouped {
-                                let _ = self.eval_grouped_decl(&decl);
+                                Decl::Let {
+                                    is_pub: true, pattern, ..
+                                } => {
+                                    if let ivy_syntax::Pattern::Var(ident) = &pattern.node {
+                                        public_names.insert(ident.name.clone());
+                                    }
+                                }
+                                Decl::Type {
+                                    is_pub: true,
+                                    name,
+                                    body,
+                                    ..
+                                } => {
+                                    public_names.insert(name.name.clone());
+                                    if let ivy_syntax::TypeBody::Sum(variants) = body {
+                                        for variant in variants {
+                                            public_names.insert(variant.name.name.clone());
+                                        }
+                                    }
+                                }
+                                _ => {}
                             }
                         }
+
+                        let grouped = self.collect_declarations(&program.declarations);
+                        for decl in grouped {
+                            let _ = self.eval_grouped_decl(&decl);
+                        }
                     }
-                    break;
                 }
+                break;
             }
         }
     }
@@ -202,9 +237,45 @@ impl Interpreter {
         self.loader.add_search_path(path);
     }
 
+    /// Get the search paths used for module resolution.
+    pub fn search_paths(&self) -> &[PathBuf] {
+        self.loader.search_paths()
+    }
+
+    /// Get a loaded module by name, if it exists.
+    pub fn get_loaded_module(&self, module_name: &str) -> Option<&HashMap<String, Value>> {
+        self.modules.get(module_name)
+    }
+
     /// Get a module namespace by name.
     pub fn get_module(&self, name: &str) -> Option<&HashMap<String, Value>> {
         self.modules.get(name)
+    }
+
+    /// List exports for modules that are fully imported
+    pub fn list_module_exports(&self) -> Vec<(String, Vec<String>)> {
+        let imported_modules: Vec<String> = self
+            .env
+            .all_bindings()
+            .into_iter()
+            .filter_map(|(_name, value)| {
+                if let Value::Module { name: module_name } = value {
+                    Some(module_name)
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        self.modules
+            .iter()
+            .filter(|(module_name, _)| imported_modules.contains(module_name))
+            .map(|(module_name, exports)| {
+                let mut export_names: Vec<String> = exports.keys().cloned().collect();
+                export_names.sort();
+                (module_name.clone(), export_names)
+            })
+            .collect()
     }
 
     /// List all user-defined bindings (excluding builtins).
@@ -234,8 +305,8 @@ impl Interpreter {
 
     pub fn eval_program(&mut self, program: &Program) -> EvalResult<Value> {
         for decl in &program.declarations {
-            if let Decl::Import { path, items } = &decl.node {
-                self.process_import(path, items.as_ref(), decl.span)?;
+            if let Decl::Import { path, kind } = &decl.node {
+                self.process_import(path, kind, decl.span)?;
             }
         }
         let grouped = self.collect_declarations(&program.declarations);
@@ -250,9 +321,11 @@ impl Interpreter {
     fn process_import(
         &mut self,
         path: &[ivy_syntax::Ident],
-        items: Option<&Vec<ivy_syntax::Ident>>,
+        kind: &ivy_syntax::decl::ImportKind,
         span: Span,
     ) -> EvalResult<()> {
+        use ivy_syntax::decl::ImportKind;
+
         if path.is_empty() {
             return Ok(());
         }
@@ -260,13 +333,26 @@ impl Interpreter {
         let path_strings: Vec<String> = path.iter().map(|id| id.name.clone()).collect();
         let module_name = path_strings.join(".");
 
+        if self.loaded_modules.contains(&module_name) {
+            let mut cycle: Vec<String> = self.loaded_modules.iter().cloned().collect();
+            cycle.push(module_name.clone());
+            return Err(EvalError::CircularImport {
+                module: module_name,
+                cycle,
+                span,
+            });
+        }
+
         if !self.modules.contains_key(&module_name) {
-            match self.loader.load(&path_strings) {
+            self.loaded_modules.insert(module_name.clone());
+
+            let result = self.loader.load(&path_strings);
+            match result {
                 Ok(module) => {
                     let program = module.program.clone();
                     let public_names = module.public_names.clone();
 
-                    let saved_env = std::mem::replace(&mut self.env, Env::new());
+                    let saved_env = std::mem::take(&mut self.env);
 
                     self.register_builtins();
                     let grouped = self.collect_declarations(&program.declarations);
@@ -283,8 +369,10 @@ impl Interpreter {
 
                     self.env = saved_env;
                     self.modules.insert(module_name.clone(), exports);
+                    self.loaded_modules.remove(&module_name);
                 }
                 Err(e) => {
+                    self.loaded_modules.remove(&module_name);
                     return Err(EvalError::ModuleError {
                         message: e.to_string(),
                         span,
@@ -293,25 +381,9 @@ impl Interpreter {
             }
         }
 
-        // Bring imported names into scope
         if let Some(module_exports) = self.modules.get(&module_name).cloned() {
-            match items {
-                Some(names) => {
-                    // Selective import: `import Math.{add, sub}`
-                    for name in names {
-                        if let Some(value) = module_exports.get(&name.name) {
-                            self.env.define(&name.name, value.clone(), false);
-                        } else {
-                            return Err(EvalError::PrivateItem {
-                                name: name.name.clone(),
-                                module: module_name.clone(),
-                                span: name.span,
-                            });
-                        }
-                    }
-                }
-                None => {
-                    // // Full module import: `import Math`
+            match kind {
+                ImportKind::Qualified => {
                     self.env.define(
                         &path[0].name,
                         Value::Module {
@@ -319,6 +391,33 @@ impl Interpreter {
                         },
                         false,
                     );
+                }
+                ImportKind::Alias(alias) => {
+                    self.env.define(
+                        &alias.name,
+                        Value::Module {
+                            name: module_name.clone(),
+                        },
+                        false,
+                    );
+                }
+                ImportKind::All => {
+                    for (name, value) in module_exports {
+                        self.env.define(&name, value.clone(), false);
+                    }
+                }
+                ImportKind::Items(items) => {
+                    for item in items {
+                        if let Some(value) = module_exports.get(&item.name) {
+                            self.env.define(&item.name, value.clone(), false);
+                        } else {
+                            return Err(EvalError::PrivateItem {
+                                name: item.name.clone(),
+                                module: module_name.clone(),
+                                span: item.span,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -328,6 +427,13 @@ impl Interpreter {
 
     /// Register builtins in the current environment.
     fn register_builtins(&self) {
+        // True builtins (user-facing, always available)
+        self.env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
+        self.env
+            .define("println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
+        self.env.define("show", Value::Builtin(BUILTIN_SHOW.clone()), false);
+
+        // I/O intrinsics
         self.env.define("__print", Value::Builtin(BUILTIN_PRINT.clone()), false);
         self.env
             .define("__println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
@@ -337,10 +443,83 @@ impl Interpreter {
             .define("__readLine", Value::Builtin(BUILTIN_READ_LINE.clone()), false);
         self.env
             .define("__readInt", Value::Builtin(BUILTIN_READ_INT.clone()), false);
-        self.env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
+
+        // Conversion intrinsics (wrapped by lib/Convert.ivy)
         self.env
-            .define("println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
-        self.env.define("show", Value::Builtin(BUILTIN_SHOW.clone()), false);
+            .define("__floatFromInt", Value::Builtin(BUILTIN_FLOAT_FROM_INT.clone()), false);
+        self.env
+            .define("__floatToInt", Value::Builtin(BUILTIN_FLOAT_TO_INT.clone()), false);
+        self.env.define(
+            "__floatToString",
+            Value::Builtin(BUILTIN_FLOAT_TO_STRING.clone()),
+            false,
+        );
+        self.env
+            .define("__stringToInt", Value::Builtin(BUILTIN_STRING_TO_INT.clone()), false);
+        self.env.define(
+            "__stringToFloat",
+            Value::Builtin(BUILTIN_STRING_TO_FLOAT.clone()),
+            false,
+        );
+        self.env.define(
+            "__tryStringToInt",
+            Value::Builtin(BUILTIN_TRY_STRING_TO_INT.clone()),
+            false,
+        );
+        self.env.define(
+            "__tryStringToFloat",
+            Value::Builtin(BUILTIN_TRY_STRING_TO_FLOAT.clone()),
+            false,
+        );
+
+        // Math intrinsics (wrapped by lib/Math.ivy)
+        self.env.define("__abs", Value::Builtin(BUILTIN_ABS.clone()), false);
+        self.env.define("__min", Value::Builtin(BUILTIN_MIN.clone()), false);
+        self.env.define("__max", Value::Builtin(BUILTIN_MAX.clone()), false);
+        self.env.define("__pow", Value::Builtin(BUILTIN_POW.clone()), false);
+        self.env.define("__sqrt", Value::Builtin(BUILTIN_SQRT.clone()), false);
+        self.env.define("__floor", Value::Builtin(BUILTIN_FLOOR.clone()), false);
+        self.env.define("__ceil", Value::Builtin(BUILTIN_CEIL.clone()), false);
+        self.env.define("__round", Value::Builtin(BUILTIN_ROUND.clone()), false);
+        self.env
+            .define("__random", Value::Builtin(BUILTIN_RANDOM.clone()), false);
+
+        // String intrinsics (wrapped by lib/String.ivy)
+        self.env
+            .define("__strLength", Value::Builtin(BUILTIN_STR_LENGTH.clone()), false);
+        self.env
+            .define("__strTrim", Value::Builtin(BUILTIN_STR_TRIM.clone()), false);
+        self.env
+            .define("__strContains", Value::Builtin(BUILTIN_STR_CONTAINS.clone()), false);
+        self.env
+            .define("__strSubstring", Value::Builtin(BUILTIN_STR_SUBSTRING.clone()), false);
+        self.env
+            .define("__strSplit", Value::Builtin(BUILTIN_STR_SPLIT.clone()), false);
+        self.env
+            .define("__strToUpper", Value::Builtin(BUILTIN_STR_TO_UPPER.clone()), false);
+        self.env
+            .define("__strToLower", Value::Builtin(BUILTIN_STR_TO_LOWER.clone()), false);
+        self.env.define(
+            "__strStartsWith",
+            Value::Builtin(BUILTIN_STR_STARTS_WITH.clone()),
+            false,
+        );
+        self.env
+            .define("__strEndsWith", Value::Builtin(BUILTIN_STR_ENDS_WITH.clone()), false);
+        self.env
+            .define("__strReplace", Value::Builtin(BUILTIN_STR_REPLACE.clone()), false);
+
+        // File I/O intrinsics (wrapped by lib/File.ivy)
+        self.env
+            .define("__readFile", Value::Builtin(BUILTIN_READ_FILE.clone()), false);
+        self.env
+            .define("__writeFile", Value::Builtin(BUILTIN_WRITE_FILE.clone()), false);
+        self.env
+            .define("__appendFile", Value::Builtin(BUILTIN_APPEND_FILE.clone()), false);
+        self.env
+            .define("__fileExists", Value::Builtin(BUILTIN_FILE_EXISTS.clone()), false);
+
+        // Constructors
         self.env.define(
             "None",
             Value::Constructor {
@@ -763,7 +942,7 @@ impl Interpreter {
             }
 
             Value::MultiClause(ref multi) => {
-                let arity = self.multi_clause_arity(&multi);
+                let arity = self.multi_clause_arity(multi);
 
                 if args.len() < arity {
                     return Ok(Value::PartialApp {
@@ -774,11 +953,11 @@ impl Interpreter {
 
                 if args.len() > arity {
                     let (now, later) = args.split_at(arity);
-                    let result = self.apply_multi_clause(&multi, now.to_vec(), span)?;
+                    let result = self.apply_multi_clause(multi, now.to_vec(), span)?;
                     return self.apply(result, later.to_vec(), span);
                 }
 
-                self.apply_multi_clause(&multi, args, span)
+                self.apply_multi_clause(multi, args, span)
             }
 
             Value::Builtin(ref builtin) => {
@@ -912,7 +1091,7 @@ impl Interpreter {
             }),
             Value::Tuple(elements) => {
                 if let Ok(idx) = field.parse::<usize>() {
-                    elements.get(idx).cloned().ok_or_else(|| EvalError::IndexOutOfBounds {
+                    elements.get(idx).cloned().ok_or(EvalError::IndexOutOfBounds {
                         index: idx as i64,
                         length: elements.len(),
                         span,
@@ -960,7 +1139,7 @@ impl Interpreter {
                 } else {
                     *idx as usize
                 };
-                vec.get(i).cloned().ok_or_else(|| EvalError::IndexOutOfBounds {
+                vec.get(i).cloned().ok_or(EvalError::IndexOutOfBounds {
                     index: *idx,
                     length: vec.len(),
                     span,
@@ -968,7 +1147,7 @@ impl Interpreter {
             }
             (Value::Tuple(elements), Value::Int(idx)) => {
                 let i = *idx as usize;
-                elements.get(i).cloned().ok_or_else(|| EvalError::IndexOutOfBounds {
+                elements.get(i).cloned().ok_or(EvalError::IndexOutOfBounds {
                     index: *idx,
                     length: elements.len(),
                     span,
@@ -984,7 +1163,7 @@ impl Interpreter {
                 chars
                     .get(i)
                     .map(|c| Value::Char(*c))
-                    .ok_or_else(|| EvalError::IndexOutOfBounds {
+                    .ok_or(EvalError::IndexOutOfBounds {
                         index: *idx,
                         length: chars.len(),
                         span,
@@ -1024,7 +1203,7 @@ impl Interpreter {
                             result.push(GroupedDecl::MultiClauseFn { name, clauses });
                         }
                     }
-                    result.push(GroupedDecl::Single(decl.clone()));
+                    result.push(GroupedDecl::Single(Box::new(decl.clone())));
                 }
             }
         }
@@ -1085,28 +1264,15 @@ impl Interpreter {
                 match body {
                     TypeBody::Sum(variants) => {
                         for variant in variants {
-                            let arity = variant.fields.len();
-                            if arity == 0 {
-                                self.env.define(
-                                    &variant.name.name,
-                                    Value::Constructor {
-                                        type_name: name.name.clone(),
-                                        variant: variant.name.name.clone(),
-                                        fields: vec![],
-                                    },
-                                    false,
-                                );
-                            } else {
-                                self.env.define(
-                                    &variant.name.name,
-                                    Value::Constructor {
-                                        type_name: name.name.clone(),
-                                        variant: variant.name.name.clone(),
-                                        fields: vec![],
-                                    },
-                                    false,
-                                );
-                            }
+                            self.env.define(
+                                &variant.name.name,
+                                Value::Constructor {
+                                    type_name: name.name.clone(),
+                                    variant: variant.name.name.clone(),
+                                    fields: vec![],
+                                },
+                                false,
+                            );
                         }
                     }
                     TypeBody::Record(_) => {
@@ -1153,7 +1319,7 @@ impl Interpreter {
 
 /// Grouped declaration after collecting.
 enum GroupedDecl {
-    Single(Spanned<Decl>),
+    Single(Box<Spanned<Decl>>),
     MultiClauseFn { name: String, clauses: Vec<FnClause> },
 }
 

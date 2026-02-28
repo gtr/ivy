@@ -4,16 +4,8 @@
 //! 1. Walk the AST, generating type variables and constraints
 //! 2. Solve constraints via unification
 //! 3. Apply the resulting substitution to get final types
-//! https://smunix.github.io/dev.stephendiehl.com/fun/006_hindley_milner.html
-
-use ivy_syntax::{
-    expr::{Expr, MatchArm, Param},
-    lit::Literal,
-    op::{BinOp, UnaryOp},
-    pattern::Pattern,
-    Span, Spanned,
-};
-
+//!
+//! Reference: <https://smunix.github.io/dev.stephendiehl.com/fun/006_hindley_milner.html>
 use crate::env::{TypeEnv, TypeVarGen};
 use crate::error::{TypeError, TypeResult};
 use crate::exhaustiveness;
@@ -21,15 +13,25 @@ use crate::registry::TypeRegistry;
 use crate::subst::Subst;
 use crate::types::{Scheme, Type};
 use crate::unify::unify_with_subst;
+use ivy_syntax::{
+    expr::{Expr, MatchArm, Param},
+    lit::Literal,
+    op::{BinOp, UnaryOp},
+    pattern::Pattern,
+    Span, Spanned,
+};
+use std::collections::HashSet;
 
-/// Type checker state.
+/// Type checker state
 pub struct TypeChecker {
-    /// Type variable generator.
+    /// Type variable generator
     gen: TypeVarGen,
-    /// Current substitution (accumulates constraints).
+    /// Current substitution (accumulates constraints)
     pub subst: Subst,
-    /// Type registry for exhaustiveness checking.
+    /// Type registry for exhaustiveness checking
     pub registry: TypeRegistry,
+    /// Modules currently being loaded (for cycle detection)
+    pub loaded_modules: HashSet<String>,
 }
 
 impl TypeChecker {
@@ -39,6 +41,7 @@ impl TypeChecker {
             gen: TypeVarGen::new(),
             subst: Subst::new(),
             registry: TypeRegistry::with_builtins(),
+            loaded_modules: HashSet::new(),
         }
     }
 
@@ -410,8 +413,6 @@ impl TypeChecker {
         span: Span,
     ) -> TypeResult<Type> {
         let callee_ty = self.infer(callee, env)?;
-
-        // Infer argument types
         let mut arg_types = Vec::new();
         for arg in args {
             arg_types.push(self.infer(arg, env)?);
@@ -429,8 +430,18 @@ impl TypeChecker {
         Ok(result_ty)
     }
 
-    /// Infer the type of a field access.
+    /// Infer the type of a field access
     fn infer_field(&mut self, object: &Spanned<Expr>, field: &str, env: &TypeEnv, span: Span) -> TypeResult<Type> {
+        if let Expr::Var(ident) = &object.node {
+            let module_name = &ident.name;
+            if let Some(scheme) = env.get_module_export(module_name, field) {
+                return Ok(self.gen.instantiate(scheme));
+            }
+            if env.is_module(module_name) {
+                return Err(TypeError::undefined_field(module_name, field, span));
+            }
+        }
+
         let obj_ty = self.infer(object, env)?;
         let resolved = self.subst.apply(&obj_ty);
 
@@ -644,8 +655,8 @@ impl TypeChecker {
                         for _ in 0..args.len() {
                             match current_ty {
                                 Type::Fun(arg_ty, ret_ty) => {
-                                    arg_types.push(self.subst.apply(&*arg_ty));
-                                    current_ty = self.subst.apply(&*ret_ty);
+                                    arg_types.push(self.subst.apply(&arg_ty));
+                                    current_ty = self.subst.apply(&ret_ty);
                                 }
                                 _ => {
                                     return Err(TypeError::arity_mismatch(

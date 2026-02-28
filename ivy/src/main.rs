@@ -1,11 +1,10 @@
 //! Ivy CLI
-//!
 //! Command-line interface for the Ivy programming language. It's actually a REPL (read, print,
 //! evaluate, loop) to be fair. Also contains logic for errors and REPL commands.
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use rustyline::error::ReadlineError;
@@ -19,6 +18,8 @@ use ivy_types::TypeError;
 const GREEN: &str = "\x1b[32m";
 const BLUE: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
+
+const PRELUDE_FILE: &str = "lib/prelude.ivy";
 
 /// Wrapper for ParseError that includes source code for miette pretty printing.
 #[derive(Error, Debug, Diagnostic)]
@@ -133,6 +134,10 @@ impl SourcedEvalError {
             EvalError::ModuleError { span, .. } => {
                 ((span.start, span.end - span.start).into(), "module error".to_string())
             }
+            EvalError::CircularImport { span, cycle, .. } => (
+                (span.start, span.end - span.start).into(),
+                format!("cycle: {}", cycle.join(" -> ")),
+            ),
             EvalError::PrivateItem { span, .. } => {
                 ((span.start, span.end - span.start).into(), "not accessible".to_string())
             }
@@ -140,6 +145,7 @@ impl SourcedEvalError {
                 (span.start, span.end - span.start).into(),
                 "module not found".to_string(),
             ),
+            EvalError::ValueError { span, message } => ((span.start, span.end - span.start).into(), message.clone()),
         };
         Self {
             src: NamedSource::new(filename, source.to_string()),
@@ -165,6 +171,17 @@ struct SourcedTypeError {
 impl SourcedTypeError {
     fn new(error: TypeError, source: &str, filename: &str) -> Self {
         use ivy_types::TypeErrorKind;
+
+        if let TypeErrorKind::ModuleTypeError {
+            file_path,
+            source: module_source,
+            inner,
+            ..
+        } = &error.kind
+        {
+            return Self::new(*inner.clone(), module_source, file_path);
+        }
+
         let span_range = error.span;
         let label_text = match &error.kind {
             TypeErrorKind::Mismatch { expected, found } => {
@@ -194,6 +211,21 @@ impl SourcedTypeError {
             }
             TypeErrorKind::MissingField { field, .. } => {
                 format!("missing field `{}`", field)
+            }
+            TypeErrorKind::ModuleNotFound { module } => {
+                format!("module '{}' not found", module)
+            }
+            TypeErrorKind::CircularImport { module, .. } => {
+                format!("circular import: '{}'", module)
+            }
+            TypeErrorKind::ModuleIOError { module, .. } => {
+                format!("error reading module '{}'", module)
+            }
+            TypeErrorKind::ModuleParseError { module, .. } => {
+                format!("parse error in module '{}'", module)
+            }
+            TypeErrorKind::ModuleTypeError { .. } => {
+                unreachable!("handled above")
             }
         };
         Self {
@@ -233,15 +265,26 @@ fn print_usage() {
 
 fn check_file(path: &str, source: &str) {
     match ivy_parse::parse(source) {
-        Ok(program) => match ivy_types::check_program(&program) {
-            Ok(()) => {
-                println!("{}OK{}: {} type checks successfully", GREEN, RESET, path);
+        Ok(program) => {
+            let mut search_paths = get_default_search_paths();
+            if let Some(parent) = Path::new(path).parent() {
+                if let Ok(abs_parent) = fs::canonicalize(parent) {
+                    search_paths.insert(0, abs_parent);
+                }
             }
-            Err(e) => {
-                print_type_error(e, source, path);
-                std::process::exit(1);
+            let mut type_checker = ivy_types::TypeChecker::new();
+            let mut type_env = ivy_types::TypeEnv::with_builtins();
+
+            match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &search_paths) {
+                Ok(()) => {
+                    println!("{}OK{}: {} type checks successfully", GREEN, RESET, path);
+                }
+                Err(e) => {
+                    print_type_error(e, source, path);
+                    std::process::exit(1);
+                }
             }
-        },
+        }
         Err(e) => {
             print_parse_error(e, source, path);
             std::process::exit(1);
@@ -268,15 +311,24 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
             if show_tree {
                 println!("{:#?}", program);
             } else {
-                // Type check first
-                match ivy_types::check_program(&program) {
+                // Build search paths for module resolution
+                let mut search_paths = get_default_search_paths();
+                if let Some(parent) = Path::new(path).parent() {
+                    if let Ok(abs_parent) = fs::canonicalize(parent) {
+                        search_paths.insert(0, abs_parent);
+                    }
+                }
+
+                // Type check with import support
+                let mut type_checker = ivy_types::TypeChecker::new();
+                let mut type_env = ivy_types::TypeEnv::with_builtins();
+
+                match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &search_paths) {
                     Ok(()) => {
                         let mut interp = Interpreter::new();
 
-                        if let Some(parent) = Path::new(path).parent() {
-                            if let Ok(abs_parent) = fs::canonicalize(parent) {
-                                interp.add_search_path(abs_parent);
-                            }
+                        for search_path in &search_paths {
+                            interp.add_search_path(search_path.clone());
                         }
 
                         match interp.eval_program(&program) {
@@ -307,7 +359,6 @@ fn print_repl_help() {
     println!("  :help, :h          Show this help message");
     println!("  :quit, :q          Exit the REPL");
     println!("  :reset, :r         Reset interpreter state (clear all definitions)");
-    println!("  :load <path>, :l   Load and execute a file");
     println!("  :type <expr>, :t   Show the inferred type of an expression");
     println!("  :env               Show all defined names in current scope");
     println!();
@@ -360,7 +411,7 @@ fn print_greeting() {
     println!(r" | \ \ / / | | |");
     println!(r" | |\ V /| |_| |");
     println!(r" |_| \_/  \__, |");
-    println!(r"          |___/  v0.2");
+    println!(r"          |___/ ");
     println!("{}", RESET);
     println!("Ivy - the friendly functional programming language");
     println!(
@@ -372,26 +423,44 @@ fn print_greeting() {
 /// Load prelude types into the type environment.
 fn load_prelude_types(type_checker: &mut ivy_types::TypeChecker, type_env: &mut ivy_types::TypeEnv) {
     let prelude_paths = [
-        env::current_dir().ok().map(|d| d.join("lib/prelude.ivy")),
+        env::current_dir().ok().map(|d| d.join(PRELUDE_FILE)),
         env::current_exe()
             .ok()
-            .and_then(|p| p.parent().map(|d| d.join("lib/prelude.ivy"))),
+            .and_then(|p| p.parent().map(|d| d.join(PRELUDE_FILE))),
         env::current_exe()
             .ok()
-            .and_then(|p| p.parent().and_then(|d| d.parent().map(|d| d.join("lib/prelude.ivy")))),
+            .and_then(|p| p.parent().and_then(|d| d.parent().map(|d| d.join(PRELUDE_FILE)))),
     ];
-    for path_opt in prelude_paths {
-        if let Some(path) = path_opt {
-            if path.exists() {
-                if let Ok(source) = fs::read_to_string(&path) {
-                    if let Ok(program) = ivy_parse::parse(&source) {
-                        let _ = ivy_types::check_program_with_env(&program, type_checker, type_env);
-                    }
+    for path in prelude_paths.into_iter().flatten() {
+        if path.exists() {
+            if let Ok(source) = fs::read_to_string(&path) {
+                if let Ok(program) = ivy_parse::parse(&source) {
+                    let _ = ivy_types::check_program_with_env(&program, type_checker, type_env, &[]);
                 }
-                break;
+            }
+            break;
+        }
+    }
+}
+/// Get default search paths for module resolution.
+fn get_default_search_paths() -> Vec<PathBuf> {
+    let mut paths = vec![];
+
+    if let Ok(cwd) = env::current_dir() {
+        paths.push(cwd.clone());
+        paths.push(cwd.join("lib"));
+    }
+
+    if let Ok(exe_path) = env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            paths.push(exe_dir.join("lib"));
+            if let Some(parent) = exe_dir.parent() {
+                paths.push(parent.join("lib"));
             }
         }
     }
+
+    paths
 }
 
 fn repl() {
@@ -454,43 +523,25 @@ fn repl() {
                             println!("Interpreter state reset.");
                         }
 
-                        ":l" | ":load" => {
-                            if let Some(path) = arg {
-                                match fs::read_to_string(path) {
-                                    Ok(source) => match ivy_parse::parse(&source) {
-                                        Ok(program) => match ivy_types::check_program(&program) {
-                                            Ok(()) => match interp.eval_program(&program) {
-                                                Ok(_) => {
-                                                    println!("Loaded '{}'", path);
-                                                }
-                                                Err(e) => {
-                                                    print_eval_error(e, &source, path);
-                                                }
-                                            },
-                                            Err(e) => {
-                                                print_type_error(e, &source, path);
-                                            }
-                                        },
-                                        Err(e) => {
-                                            print_parse_error(e, &source, path);
-                                        }
-                                    },
-                                    Err(e) => {
-                                        eprintln!("Error reading '{}': {}", path, e);
-                                    }
-                                }
-                            } else {
-                                eprintln!("Usage: :load <path>");
-                            }
-                        }
-
                         ":env" => {
-                            let bindings = interp.list_bindings();
-                            if bindings.is_empty() {
+                            let mut all_names: Vec<String> = interp
+                                .list_bindings()
+                                .into_iter()
+                                .filter(|name| !name.starts_with("__"))
+                                .collect();
+                            for (module_name, exports) in interp.list_module_exports() {
+                                for export_name in exports {
+                                    all_names.push(format!("{}.{}", module_name, export_name));
+                                }
+                            }
+
+                            all_names.sort();
+
+                            if all_names.is_empty() {
                                 println!("(no user-defined bindings)");
                             } else {
                                 println!("Defined names:");
-                                for name in bindings {
+                                for name in all_names {
                                     println!("  {}", name);
                                 }
                             }
@@ -555,11 +606,8 @@ fn repl() {
                 }
 
                 let _ = rl.add_history_entry(&input_buffer);
-
                 let result =
                     ivy_parse::parse(&input_buffer).or_else(|_| ivy_parse::parse(&format!("{};", input_buffer)));
-
-                // Keep a copy of the source for error reporting
                 let source_for_errors = input_buffer.clone();
 
                 match result {
@@ -567,7 +615,14 @@ fn repl() {
                         continuation = false;
                         input_buffer.clear();
 
-                        match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env) {
+                        let search_paths = get_default_search_paths();
+
+                        match ivy_types::check_program_with_env(
+                            &program,
+                            &mut type_checker,
+                            &mut type_env,
+                            &search_paths,
+                        ) {
                             Ok(()) => match interp.eval_program(&program) {
                                 Ok(value) => {
                                     if !matches!(value, Value::Unit) {

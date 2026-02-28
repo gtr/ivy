@@ -1,7 +1,3 @@
-//! Parser for Ivy.
-//!
-//! This parser consumes tokens produced by the lexer and builds an AST.
-
 use crate::error::{ParseError, ParseResult};
 use crate::lexer;
 use crate::token::{Token, TokenKind};
@@ -78,7 +74,7 @@ impl<'a> Parser<'a> {
 
     /// Check if the token current position + offset matches a kind.
     fn check_ahead(&self, offset: usize, kind: TokenKind) -> bool {
-        self.tokens.get(self.pos + offset).map_or(false, |t| t.kind == kind)
+        self.tokens.get(self.pos + offset).is_some_and(|t| t.kind == kind)
     }
 
     /// Consume a token if it matches, otherwise return an error.
@@ -132,7 +128,7 @@ impl<'a> Parser<'a> {
 
         let decl = match self.peek() {
             TokenKind::Module => self.parse_module_decl()?,
-            TokenKind::Import => self.parse_import_decl()?,
+            TokenKind::Import | TokenKind::From => self.parse_import_decl()?,
             TokenKind::Type => self.parse_type_decl(is_pub)?,
             TokenKind::Trait => self.parse_trait_decl()?,
             TokenKind::Impl => self.parse_impl_decl()?,
@@ -171,33 +167,49 @@ impl<'a> Parser<'a> {
         Ok(Decl::Module { name })
     }
 
-    /// Parse import declaration: import Path.To.Module;
+    /// Parse import declaration
     fn parse_import_decl(&mut self) -> ParseResult<Decl> {
-        self.expect(TokenKind::Import)?;
+        use ivy_syntax::decl::ImportKind;
 
-        let mut path = vec![self.parse_ident_any()?];
+        if self.match_token(TokenKind::From).is_some() {
+            let path = self.parse_module_path()?;
+            self.expect(TokenKind::Import)?;
 
-        while self.match_token(TokenKind::Dot).is_some() {
-            // Check for selective import: import Foo.{bar, baz}
-            if self.check(TokenKind::LBrace) {
-                self.advance();
+            let kind = if self.match_token(TokenKind::Star).is_some() {
+                ImportKind::All
+            } else {
                 let mut items = vec![self.parse_ident_any()?];
                 while self.match_token(TokenKind::Comma).is_some() {
                     items.push(self.parse_ident_any()?);
                 }
-                self.expect(TokenKind::RBrace)?;
-                self.expect(TokenKind::Semi)?;
-                return Ok(Decl::Import {
-                    path,
-                    items: Some(items),
-                });
-            }
+                ImportKind::Items(items)
+            };
 
+            self.expect(TokenKind::Semi)?;
+            Ok(Decl::Import { path, kind })
+        } else {
+            self.expect(TokenKind::Import)?;
+            let path = self.parse_module_path()?;
+
+            let kind = if self.match_token(TokenKind::As).is_some() {
+                let alias = self.parse_ident_any()?;
+                ImportKind::Alias(alias)
+            } else {
+                ImportKind::Qualified
+            };
+
+            self.expect(TokenKind::Semi)?;
+            Ok(Decl::Import { path, kind })
+        }
+    }
+
+    /// Parse a module path like Math or Foo.Bar.Baz
+    fn parse_module_path(&mut self) -> ParseResult<Vec<Ident>> {
+        let mut path = vec![self.parse_ident_any()?];
+        while self.match_token(TokenKind::Dot).is_some() {
             path.push(self.parse_ident_any()?);
         }
-
-        self.expect(TokenKind::Semi)?;
-        Ok(Decl::Import { path, items: None })
+        Ok(path)
     }
 
     /// Parse type declaration: type Name<a> = ...;
@@ -280,7 +292,7 @@ impl<'a> Parser<'a> {
                 let span = self.span_from(start);
                 fields.push(RecordField::new(name, ty, span));
 
-                if !self.match_token(TokenKind::Comma).is_some() {
+                if self.match_token(TokenKind::Comma).is_none() {
                     break;
                 }
                 // Allow trailing comma
@@ -330,7 +342,7 @@ impl<'a> Parser<'a> {
                 loop {
                     let param = self.parse_param()?;
                     params.push(param);
-                    if !self.match_token(TokenKind::Comma).is_some() {
+                    if self.match_token(TokenKind::Comma).is_none() {
                         break;
                     }
                 }
@@ -445,7 +457,7 @@ impl<'a> Parser<'a> {
                 let span = self.span_from(start);
                 constraints.push(Constraint::new(trait_name, type_arg, span));
 
-                if !self.match_token(TokenKind::Comma).is_some() {
+                if self.match_token(TokenKind::Comma).is_none() {
                     break;
                 }
             }
@@ -515,7 +527,7 @@ impl<'a> Parser<'a> {
             loop {
                 let param = self.parse_param()?;
                 params.push(param);
-                if !self.match_token(TokenKind::Comma).is_some() {
+                if self.match_token(TokenKind::Comma).is_none() {
                     break;
                 }
             }
@@ -815,7 +827,7 @@ impl<'a> Parser<'a> {
             loop {
                 let param = self.parse_param()?;
                 params.push(param);
-                if !self.match_token(TokenKind::Comma).is_some() {
+                if self.match_token(TokenKind::Comma).is_none() {
                     break;
                 }
             }
@@ -1123,12 +1135,11 @@ impl<'a> Parser<'a> {
 
         loop {
             if self.match_token(TokenKind::LParen).is_some() {
-                // Function call
                 let mut args = Vec::new();
                 if !self.check(TokenKind::RParen) {
                     loop {
                         args.push(self.parse_expr()?);
-                        if !self.match_token(TokenKind::Comma).is_some() {
+                        if self.match_token(TokenKind::Comma).is_none() {
                             break;
                         }
                     }
@@ -1143,7 +1154,6 @@ impl<'a> Parser<'a> {
                     span,
                 );
             } else if self.match_token(TokenKind::Dot).is_some() {
-                // Field access
                 let field = self.parse_ident()?;
                 let span = self.span_from(start);
                 expr = Spanned::new(
@@ -1154,7 +1164,6 @@ impl<'a> Parser<'a> {
                     span,
                 );
             } else if self.match_token(TokenKind::LBracket).is_some() {
-                // Index access
                 let index = self.parse_expr()?;
                 self.expect(TokenKind::RBracket)?;
                 let span = self.span_from(start);
@@ -1178,7 +1187,6 @@ impl<'a> Parser<'a> {
         let start = self.current().span.start;
 
         match self.peek() {
-            // Literals
             TokenKind::Int => {
                 let token = self.advance();
                 let value: i64 = token.lexeme.parse().unwrap();
@@ -1212,19 +1220,13 @@ impl<'a> Parser<'a> {
                 let span = token.span;
                 Ok(Spanned::new(Expr::Lit(Literal::Bool(false)), span))
             }
-
-            // Identifier
             TokenKind::Ident => {
                 let name = self.parse_ident()?;
                 let span = name.span;
                 Ok(Spanned::new(Expr::Var(name), span))
             }
-
-            // Type identifier (constructor)
             TokenKind::TypeIdent => {
                 let name = self.parse_type_ident()?;
-
-                // Check for record construction: Type { field: value }
                 if self.check(TokenKind::LBrace) {
                     self.advance();
                     let mut fields = Vec::new();
@@ -1238,7 +1240,7 @@ impl<'a> Parser<'a> {
                             let field_span = self.span_from(field_start);
                             fields.push(FieldInit::new(field_name, value, field_span));
 
-                            if !self.match_token(TokenKind::Comma).is_some() {
+                            if self.match_token(TokenKind::Comma).is_none() {
                                 break;
                             }
                             if self.check(TokenKind::RBrace) {
@@ -1260,15 +1262,12 @@ impl<'a> Parser<'a> {
             TokenKind::LParen => {
                 self.advance();
 
-                // Unit: ()
                 if self.match_token(TokenKind::RParen).is_some() {
                     let span = self.span_from(start);
                     return Ok(Spanned::new(Expr::Lit(Literal::Unit), span));
                 }
 
                 let first = self.parse_expr()?;
-
-                // Tuple: (a, b, ...)
                 if self.match_token(TokenKind::Comma).is_some() {
                     let mut elements = vec![first];
                     elements.push(self.parse_expr()?);
@@ -1280,23 +1279,16 @@ impl<'a> Parser<'a> {
                     return Ok(Spanned::new(Expr::Tuple { elements }, span));
                 }
 
-                // Grouped expression: (e)
                 self.expect(TokenKind::RParen)?;
                 let span = self.span_from(start);
                 Ok(Spanned::new(Expr::Paren { inner: Box::new(first) }, span))
             }
-
-            // List: [a, b, c] or cons: [h | t]
             TokenKind::LBracket => {
                 self.advance();
-
-                // Empty list: []
                 if self.match_token(TokenKind::RBracket).is_some() {
                     let span = self.span_from(start);
                     return Ok(Spanned::new(Expr::List { elements: vec![] }, span));
                 }
-
-                // check for cons syntax: [h | t]
                 let first = self.parse_expr()?;
                 if self.match_token(TokenKind::Pipe).is_some() {
                     let tail = self.parse_expr()?;
@@ -1321,8 +1313,6 @@ impl<'a> Parser<'a> {
                 let span = self.span_from(start);
                 Ok(Spanned::new(Expr::List { elements }, span))
             }
-
-            // Record update: { base | field: value }
             TokenKind::LBrace => {
                 self.advance();
                 let base = self.parse_expr()?;
@@ -1337,7 +1327,7 @@ impl<'a> Parser<'a> {
                     let field_span = self.span_from(field_start);
                     updates.push(FieldInit::new(name, value, field_span));
 
-                    if !self.match_token(TokenKind::Comma).is_some() {
+                    if self.match_token(TokenKind::Comma).is_none() {
                         break;
                     }
                 }
@@ -1357,12 +1347,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parse a pattern.
     fn parse_pattern(&mut self) -> ParseResult<Spanned<Pattern>> {
         self.parse_pattern_or()
     }
 
-    /// Parse or-pattern: p1 | p2
     fn parse_pattern_or(&mut self) -> ParseResult<Spanned<Pattern>> {
         let start = self.current().span.start;
         let left = self.parse_pattern_primary()?;
@@ -1438,7 +1426,7 @@ impl<'a> Parser<'a> {
                     if !self.check(TokenKind::RParen) {
                         loop {
                             args.push(self.parse_pattern()?);
-                            if !self.match_token(TokenKind::Comma).is_some() {
+                            if self.match_token(TokenKind::Comma).is_none() {
                                 break;
                             }
                         }
@@ -1466,7 +1454,7 @@ impl<'a> Parser<'a> {
                             let field_span = self.span_from(field_start);
                             fields.push(FieldPattern::new(field_name, pattern, field_span));
 
-                            if !self.match_token(TokenKind::Comma).is_some() {
+                            if self.match_token(TokenKind::Comma).is_none() {
                                 break;
                             }
                             if self.check(TokenKind::RBrace) {
@@ -1486,7 +1474,6 @@ impl<'a> Parser<'a> {
             TokenKind::LParen => {
                 self.advance();
 
-                // Unit: ()
                 if self.match_token(TokenKind::RParen).is_some() {
                     let span = self.span_from(start);
                     return Ok(Spanned::new(Pattern::Lit(Literal::Unit), span));
@@ -1494,7 +1481,6 @@ impl<'a> Parser<'a> {
 
                 let first = self.parse_pattern()?;
 
-                // Tuple: (a, b, ...)
                 if self.match_token(TokenKind::Comma).is_some() {
                     let mut elements = vec![first];
                     elements.push(self.parse_pattern()?);
@@ -1506,20 +1492,17 @@ impl<'a> Parser<'a> {
                     return Ok(Spanned::new(Pattern::Tuple { elements }, span));
                 }
 
-                // Grouped pattern
                 self.expect(TokenKind::RParen)?;
                 Ok(first)
             }
             TokenKind::LBracket => {
                 self.advance();
 
-                // Empty list: []
                 if self.match_token(TokenKind::RBracket).is_some() {
                     let span = self.span_from(start);
                     return Ok(Spanned::new(Pattern::List { elements: vec![] }, span));
                 }
 
-                // check for cons syntax: [h | t]
                 let first = self.parse_pattern_primary()?;
                 if self.match_token(TokenKind::Pipe).is_some() {
                     let tail = self.parse_pattern()?;

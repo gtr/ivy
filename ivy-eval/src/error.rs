@@ -1,5 +1,3 @@
-//! Error types for evaluation.
-
 use ivy_syntax::Span;
 use miette::Diagnostic;
 use thiserror::Error;
@@ -98,6 +96,15 @@ pub enum EvalError {
         span: Span,
     },
 
+    #[error("Circular import detected: {module}")]
+    #[diagnostic(code(ivy::eval::circular_import), help("import cycle: {}", cycle.join(" -> ")))]
+    CircularImport {
+        module: String,
+        cycle: Vec<String>,
+        #[label("circular dependency")]
+        span: Span,
+    },
+
     #[error("Private item: {name} is not public in module {module}")]
     #[diagnostic(code(ivy::eval::private_item))]
     PrivateItem {
@@ -112,6 +119,14 @@ pub enum EvalError {
     UndefinedModule {
         name: String,
         #[label("module not found")]
+        span: Span,
+    },
+
+    #[error("Value error: {message}")]
+    #[diagnostic(code(ivy::eval::value_error))]
+    ValueError {
+        message: String,
+        #[label("invalid value")]
         span: Span,
     },
 }

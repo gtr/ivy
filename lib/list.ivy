@@ -1,0 +1,224 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : List
+--- Author       : Gerardo Torres Castro
+---
+--- Extended list functions for the Ivy programming language.
+--- The prelude provides basic list functions (map, filter, fold, etc.).
+--- This module provides additional utilities.
+---
+--------------------------------------------------------------------------------
+
+module List;
+
+-- =============================================================================
+-- Core Utilities (needed by other functions)
+-- =============================================================================
+
+-- Reverse a list
+fn reverseHelper([], acc: [a]): [a] => acc;
+fn reverseHelper([x | xs], acc: [a]): [a] => reverseHelper(xs, [x | acc]);
+
+pub fn reverse(xs: [a]): [a] => reverseHelper(xs, []);
+
+-- Append two lists
+pub fn concat(xs: [a], ys: [a]): [a] => match xs with
+  | [] -> ys
+  | [x | rest] -> [x | concat(rest, ys)]
+end;
+
+-- =============================================================================
+-- Indexed Access
+-- =============================================================================
+
+-- Get the nth element (0-indexed), returns None if out of bounds
+pub fn nth([], _: Int): Option<a> => None;
+pub fn nth([x | _], 0): Option<a> => Some(x);
+pub fn nth([_ | xs], n: Int): Option<a> => nth(xs, n - 1);
+
+-- Get the last element of a list
+pub fn last([]): Option<a> => None;
+pub fn last([x]): Option<a> => Some(x);
+pub fn last([_ | xs]): Option<a> => last(xs);
+
+-- Get all elements except the last
+pub fn init([]): Option<[a]> => None;
+pub fn init([_]): Option<[a]> => Some([]);
+pub fn init([x | xs]): Option<[a]> => match init(xs) with
+  | None -> Some([])
+  | Some(rest) -> Some([x | rest])
+end;
+
+-- =============================================================================
+-- Searching
+-- =============================================================================
+
+-- Find the first element matching a predicate
+pub fn find(pred: a -> Bool, []): Option<a> => None;
+pub fn find(pred: a -> Bool, [x | xs]): Option<a> =>
+  if pred(x) then Some(x) else find(pred, xs);
+
+-- Find the index of the first element matching a predicate
+fn findIndexHelper(pred: a -> Bool, [], _: Int): Option<Int> => None;
+fn findIndexHelper(pred: a -> Bool, [x | xs], i: Int): Option<Int> =>
+  if pred(x) then Some(i) else findIndexHelper(pred, xs, i + 1);
+
+pub fn findIndex(pred: a -> Bool, xs: [a]): Option<Int> => findIndexHelper(pred, xs, 0);
+
+-- Check if an element exists in the list (requires equality check via predicate)
+pub fn elem(x: a, xs: [a], eq: a -> a -> Bool): Bool => match xs with
+  | [] -> false
+  | [y | ys] -> if eq(x, y) then true else elem(x, ys, eq)
+end;
+
+-- =============================================================================
+-- Combining Lists
+-- =============================================================================
+
+-- Zip two lists together into a list of pairs
+pub fn zip([], _: [b]): [(a, b)] => [];
+pub fn zip(_: [a], []): [(a, b)] => [];
+pub fn zip([x | xs], [y | ys]): [(a, b)] => [(x, y) | zip(xs, ys)];
+
+-- Zip with a combining function
+pub fn zipWith(f: a -> b -> c, [], _: [b]): [c] => [];
+pub fn zipWith(f: a -> b -> c, _: [a], []): [c] => [];
+pub fn zipWith(f: a -> b -> c, [x | xs], [y | ys]): [c] => [f(x, y) | zipWith(f, xs, ys)];
+
+-- Unzip a list of pairs into two lists
+pub fn unzip([]): ([a], [b]) => ([], []);
+pub fn unzip([(x, y) | rest]): ([a], [b]) => do {
+  let (xs, ys) = unzip(rest);
+  ([x | xs], [y | ys])
+};
+
+-- Pair each element with its index (0-indexed)
+fn enumerateFrom(i: Int, []): [(Int, a)] => [];
+fn enumerateFrom(i: Int, [x | xs]): [(Int, a)] => [(i, x) | enumerateFrom(i + 1, xs)];
+
+pub fn enumerate(xs: [a]): [(Int, a)] => enumerateFrom(0, xs);
+
+-- =============================================================================
+-- Generating Lists
+-- =============================================================================
+
+-- Create a list of n copies of a value
+pub fn replicate(0, _: a): [a] => [];
+pub fn replicate(n: Int, x: a): [a] => [x | replicate(n - 1, x)];
+
+-- Generate a range of integers [start, stop] (inclusive)
+pub fn range(start: Int, stop: Int): [Int] =>
+  if start > stop then []
+  else [start | range(start + 1, stop)];
+
+-- Generate a range with a step
+pub fn rangeStep(start: Int, stop: Int, step: Int): [Int] =>
+  if step > 0 and start > stop then []
+  else if step < 0 and start < stop then []
+  else if step == 0 then []
+  else [start | rangeStep(start + step, stop, step)];
+
+-- =============================================================================
+-- Transformations
+-- =============================================================================
+
+-- Insert an element between all elements of a list
+pub fn intersperse(sep: a, []): [a] => [];
+pub fn intersperse(sep: a, [x]): [a] => [x];
+pub fn intersperse(sep: a, [x | xs]): [a] => [x | [sep | intersperse(sep, xs)]];
+
+-- Flatten a list of lists
+pub fn flatten([]): [a] => [];
+pub fn flatten([xs | xss]): [a] => concat(xs, flatten(xss));
+
+-- Map and then flatten (aka flatMap / bind)
+pub fn concatMap(f: a -> [b], []): [b] => [];
+pub fn concatMap(f: a -> [b], [x | xs]): [b] => concat(f(x), concatMap(f, xs));
+
+-- =============================================================================
+-- Partitioning
+-- =============================================================================
+
+-- Split a list into two based on a predicate
+-- First list contains elements where pred is true, second where false
+fn partitionHelper(pred: a -> Bool, [], trues: [a], falses: [a]): ([a], [a]) =>
+  (reverse(trues), reverse(falses));
+fn partitionHelper(pred: a -> Bool, [x | xs], trues: [a], falses: [a]): ([a], [a]) =>
+  if pred(x)
+  then partitionHelper(pred, xs, [x | trues], falses)
+  else partitionHelper(pred, xs, trues, [x | falses]);
+
+pub fn partition(pred: a -> Bool, xs: [a]): ([a], [a]) => partitionHelper(pred, xs, [], []);
+
+-- Split at the first element where predicate is true
+-- span: longest prefix where pred is true, then the rest
+pub fn span(pred: a -> Bool, []): ([a], [a]) => ([], []);
+pub fn span(pred: a -> Bool, [x | xs]): ([a], [a]) =>
+  if pred(x) then do {
+    let (ys, zs) = span(pred, xs);
+    ([x | ys], zs)
+  } else ([], [x | xs]);
+
+-- Split at the first element where predicate is true (opposite of span)
+pub fn break(pred: a -> Bool, xs: [a]): ([a], [a]) => span(fn (x) => !pred(x), xs);
+
+-- Split a list at index n
+pub fn splitAt(0, xs: [a]): ([a], [a]) => ([], xs);
+pub fn splitAt(_, []): ([a], [a]) => ([], []);
+pub fn splitAt(n: Int, [x | xs]): ([a], [a]) => do {
+  let (ys, zs) = splitAt(n - 1, xs);
+  ([x | ys], zs)
+};
+
+-- =============================================================================
+-- Numeric List Functions
+-- =============================================================================
+
+-- Sum of a list of integers
+pub fn sum([]): Int => 0;
+pub fn sum([x | xs]): Int => x + sum(xs);
+
+-- Product of a list of integers
+pub fn product([]): Int => 1;
+pub fn product([x | xs]): Int => x * product(xs);
+
+-- Maximum element (returns None for empty list)
+pub fn maximum([]): Option<Int> => None;
+pub fn maximum([x]): Option<Int> => Some(x);
+pub fn maximum([x | xs]): Option<Int> => match maximum(xs) with
+  | None -> Some(x)
+  | Some(m) -> Some(if x > m then x else m)
+end;
+
+-- Minimum element (returns None for empty list)
+pub fn minimum([]): Option<Int> => None;
+pub fn minimum([x]): Option<Int> => Some(x);
+pub fn minimum([x | xs]): Option<Int> => match minimum(xs) with
+  | None -> Some(x)
+  | Some(m) -> Some(if x < m then x else m)
+end;
+
+-- =============================================================================
+-- Other Utilities
+-- =============================================================================
+
+-- Remove consecutive duplicates (requires equality predicate)
+pub fn dedup(xs: [a], eq: a -> a -> Bool): [a] => match xs with
+  | [] -> []
+  | [x] -> [x]
+  | [x | rest] -> match rest with
+      | [y | _] -> if eq(x, y) then dedup(rest, eq) else [x | dedup(rest, eq)]
+      | [] -> [x]
+    end
+end;
+
+-- Take elements while predicate is true
+pub fn takeWhile(pred: a -> Bool, []): [a] => [];
+pub fn takeWhile(pred: a -> Bool, [x | xs]): [a] =>
+  if pred(x) then [x | takeWhile(pred, xs)] else [];
+
+-- Drop elements while predicate is true
+pub fn dropWhile(pred: a -> Bool, []): [a] => [];
+pub fn dropWhile(pred: a -> Bool, [x | xs]): [a] =>
+  if pred(x) then dropWhile(pred, xs) else [x | xs];
+

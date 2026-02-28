@@ -1,7 +1,3 @@
-//! Module loader for Ivy.
-//!
-//! Handles loading, caching, and resolving module imports.
-
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::PathBuf;
@@ -10,19 +6,19 @@ use ivy_syntax::{Decl, Program};
 
 use crate::value::Value;
 
-/// Error types for module loading.
+/// Error types for module loading
 #[derive(Debug, Clone)]
 pub enum LoadError {
-    /// File not found.
+    /// File not found
     NotFound {
         module_name: String,
         searched_paths: Vec<PathBuf>,
     },
-    /// IO error reading the file.
+    /// IO error reading the file
     IoError { path: PathBuf, message: String },
-    /// Parse error in the module.
+    /// Parse error in the module
     ParseError { path: PathBuf, message: String },
-    /// Circular import detected.
+    /// Circular import detected
     CircularImport { chain: Vec<String> },
 }
 
@@ -54,23 +50,23 @@ impl std::fmt::Display for LoadError {
 
 impl std::error::Error for LoadError {}
 
-/// A loaded module with its exports.
+/// A loaded module with its exports
 #[derive(Debug, Clone)]
 pub struct Module {
-    /// The module name.
+    /// The module name
     pub name: String,
-    /// The file path from which this module was loaded.
+    /// The file path from which this module was loaded
     pub path: PathBuf,
-    /// The parsed program.
+    /// The parsed program
     pub program: Program,
-    /// Exported (public) bindings: name -> value.
+    /// Exported (public) bindings: name -> value
     pub exports: HashMap<String, Value>,
-    /// All public declaration names.
+    /// All public declaration names
     pub public_names: HashSet<String>,
 }
 
 impl Module {
-    /// Create a new empty module.
+    /// Create a new empty module
     pub fn new(name: String, path: PathBuf, program: Program) -> Self {
         Module {
             name,
@@ -81,7 +77,7 @@ impl Module {
         }
     }
 
-    /// Collect public names from declarations.
+    /// Collect public names from declarations
     pub fn collect_public_names(&mut self) {
         for decl in &self.program.declarations {
             match &decl.node {
@@ -112,7 +108,7 @@ impl Module {
     }
 }
 
-/// Collect variable names from a pattern.
+/// Collect variable names from a pattern
 fn collect_pattern_names(pattern: &ivy_syntax::Pattern, names: &mut HashSet<String>) {
     match pattern {
         ivy_syntax::Pattern::Var(ident) => {
@@ -145,13 +141,13 @@ fn collect_pattern_names(pattern: &ivy_syntax::Pattern, names: &mut HashSet<Stri
     }
 }
 
-/// Module loader with caching and circular import detection.
+/// Module loader with caching and circular import detection
 pub struct ModuleLoader {
-    /// Base paths for resolving imports (current directory, lib directory).
+    /// Base paths for resolving imports (current directory, lib directory)
     search_paths: Vec<PathBuf>,
     /// Cache of loaded modules.
     loaded: HashMap<String, Module>,
-    /// Stack of modules currently being loaded (for circular import detection).
+    /// Stack of modules currently being loaded (for circular import detection)
     loading_stack: Vec<String>,
 }
 
@@ -165,14 +161,19 @@ impl ModuleLoader {
         }
     }
 
-    /// Add a search path.
+    /// Add a search path
     pub fn add_search_path(&mut self, path: PathBuf) {
         if !self.search_paths.contains(&path) {
             self.search_paths.push(path);
         }
     }
 
-    /// Resolve a module path to a file path.
+    /// Get the search paths
+    pub fn search_paths(&self) -> &[PathBuf] {
+        &self.search_paths
+    }
+
+    /// Resolve a module path to a file path
     pub fn resolve_path(&self, module_path: &[String]) -> Option<PathBuf> {
         if module_path.is_empty() {
             return None;
@@ -202,7 +203,7 @@ impl ModuleLoader {
         None
     }
 
-    /// Get all searched paths for error messages.
+    /// Get all searched paths for error messages
     fn get_searched_paths(&self, module_path: &[String]) -> Vec<PathBuf> {
         let lowercase_path: PathBuf = module_path
             .iter()

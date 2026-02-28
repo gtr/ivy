@@ -1,0 +1,48 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : Convert
+--- Author       : Gerardo Torres Castro
+---
+--- Type conversion functions for the Ivy programming language.
+--- This module wraps low-level intrinsics to provide user-friendly conversion functions.
+---
+--------------------------------------------------------------------------------
+
+module Convert;
+
+
+-- Convert an Int to a Float
+pub fn floatFromInt(n: Int): Float => __floatFromInt(n);
+
+-- Convert a Float to an Int (truncates toward zero)
+pub fn floatToInt(f: Float): Int => __floatToInt(f);
+
+-- Convert an Int to a String
+pub fn intToString(n: Int): String => __intToString(n);
+
+-- Convert a Float to a String
+pub fn floatToString(f: Float): String => __floatToString(f);
+
+-- Parse a String to an Int (may fail at runtime if string is not a valid integer)
+pub fn stringToInt(s: String): Int => __stringToInt(s);
+
+-- Parse a String to a Float (may fail at runtime if string is not a valid float)
+pub fn stringToFloat(s: String): Float => __stringToFloat(s);
+
+-- Safe parse: try to parse a String to an Int, returns None on failure
+pub fn tryStringToInt(s: String): Option<Int> => __tryStringToInt(s);
+
+-- Safe parse: try to parse a String to a Float, returns None on failure
+pub fn tryStringToFloat(s: String): Option<Float> => __tryStringToFloat(s);
+
+-- Convert a Bool to a String
+pub fn boolToString(true): String => "true";
+pub fn boolToString(false): String => "false";
+
+-- Convert a Bool to an Int (true = 1, false = 0)
+pub fn boolToInt(true): Int => 1;
+pub fn boolToInt(false): Int => 0;
+
+-- Convert an Int to a Bool (0 = false, anything else = true)
+pub fn intToBool(0): Bool => false;
+pub fn intToBool(_): Bool => true;

@@ -1,12 +1,6 @@
-//! Type error representation.
-//!
-//! Provides detailed error messages for type checking failures.
-
-use std::fmt;
-
-use ivy_syntax::Span;
-
 use crate::types::{Type, TypeVar};
+use ivy_syntax::Span;
+use std::fmt;
 
 /// A type error with source location.
 #[derive(Debug, Clone)]
@@ -73,6 +67,26 @@ pub enum TypeErrorKind {
 
     /// Missing field in record literal
     MissingField { record: String, field: String },
+
+    /// Module not found
+    ModuleNotFound { module: String },
+
+    /// Circular import detected
+    CircularImport { module: String, cycle: Vec<String> },
+
+    /// IO error reading module
+    ModuleIOError { module: String, error: String },
+
+    /// Parse error in module
+    ModuleParseError { module: String, error: String },
+
+    /// Type error in module
+    ModuleTypeError {
+        module: String,
+        file_path: String,
+        source: String,
+        inner: Box<TypeError>,
+    },
 }
 
 impl TypeError {
@@ -161,6 +175,58 @@ impl TypeError {
             span,
         )
     }
+
+    pub fn module_not_found(module: &str, span: Span) -> TypeError {
+        TypeError::new(
+            TypeErrorKind::ModuleNotFound {
+                module: module.to_string(),
+            },
+            span,
+        )
+    }
+
+    pub fn circular_import(module: &str, cycle: Vec<String>, span: Span) -> TypeError {
+        TypeError::new(
+            TypeErrorKind::CircularImport {
+                module: module.to_string(),
+                cycle,
+            },
+            span,
+        )
+    }
+
+    pub fn module_io_error(module: &str, error: &str, span: Span) -> TypeError {
+        TypeError::new(
+            TypeErrorKind::ModuleIOError {
+                module: module.to_string(),
+                error: error.to_string(),
+            },
+            span,
+        )
+    }
+
+    pub fn module_parse_error(module: &str, error: &str, span: Span) -> TypeError {
+        TypeError::new(
+            TypeErrorKind::ModuleParseError {
+                module: module.to_string(),
+                error: error.to_string(),
+            },
+            span,
+        )
+    }
+
+    pub fn module_type_error(module: &str, file_path: &str, source: &str, inner: TypeError) -> TypeError {
+        let span = inner.span;
+        TypeError::new(
+            TypeErrorKind::ModuleTypeError {
+                module: module.to_string(),
+                file_path: file_path.to_string(),
+                source: source.to_string(),
+                inner: Box::new(inner),
+            },
+            span,
+        )
+    }
 }
 
 impl fmt::Display for TypeError {
@@ -242,10 +308,24 @@ impl fmt::Display for TypeError {
             TypeErrorKind::MissingField { record, field } => {
                 write!(f, "missing field `{}` in record {}", field, record)
             }
+            TypeErrorKind::ModuleNotFound { module } => {
+                write!(f, "module not found: {}", module)
+            }
+            TypeErrorKind::CircularImport { module, cycle } => {
+                write!(f, "circular import detected: {} (cycle: {} -> {})", module, cycle.join(" -> "), module)
+            }
+            TypeErrorKind::ModuleIOError { module, error } => {
+                write!(f, "error reading module {}: {}", module, error)
+            }
+            TypeErrorKind::ModuleParseError { module, error } => {
+                write!(f, "parse error in module {}: {}", module, error)
+            }
+            TypeErrorKind::ModuleTypeError { module, inner, .. } => {
+                write!(f, "type error in module {}: {}", module, inner)
+            }
         }
     }
 }
 
 impl std::error::Error for TypeError {}
-
 pub type TypeResult<T> = Result<T, TypeError>;

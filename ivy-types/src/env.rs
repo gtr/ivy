@@ -1,31 +1,37 @@
-//! Type environment (type context).
-
-use std::collections::{HashMap, HashSet};
-
 use crate::subst::Subst;
 use crate::types::{Scheme, Type, TypeVar};
+use std::collections::{HashMap, HashSet};
 
-/// A type environment mapping names to type schemes.
+/// A type environment mapping names to type schemes
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
+    /// Loaded bindings: name -> type scheme
     bindings: HashMap<String, Scheme>,
+    /// Loaded modules: module name -> (export name -> type scheme)
+    modules: HashMap<String, HashMap<String, Scheme>>,
 }
 
 impl TypeEnv {
-    /// Create an empty type environment.
+    /// Create an empty type environment
     pub fn new() -> TypeEnv {
         TypeEnv {
             bindings: HashMap::new(),
+            modules: HashMap::new(),
         }
     }
 
-    /// Create a type environment with built-in types and functions.
+    /// Create a type environment with built-in types and functions
     pub fn with_builtins() -> TypeEnv {
         let mut env = TypeEnv::new();
 
-        // Built-in functions
-        // print: a -> ()
         let a = TypeVar(1000);
+        let b = TypeVar(1001);
+
+        // ========================================================================
+        // True builtins (always available, user-facing)
+        // ========================================================================
+
+        // print: a -> ()
         env.insert(
             "print".to_string(),
             Scheme::poly(vec![a], Type::fun(Type::Var(a), Type::Unit)),
@@ -43,9 +49,10 @@ impl TypeEnv {
             Scheme::poly(vec![a], Type::fun(Type::Var(a), Type::String)),
         );
 
-        // Note: length, head, tail, isEmpty are defined in prelude with proper Option types
+        // ========================================================================
+        // Type constructors
+        // ========================================================================
 
-        // Option type constructors
         // Some: a -> Option<a>
         env.insert(
             "Some".to_string(),
@@ -61,8 +68,6 @@ impl TypeEnv {
             Scheme::poly(vec![a], Type::named_with("Option", vec![Type::Var(a)])),
         );
 
-        // Result type constructors
-        let b = TypeVar(1001);
         // Ok: a -> Result<a, e>
         env.insert(
             "Ok".to_string(),
@@ -87,160 +92,241 @@ impl TypeEnv {
             ),
         );
 
-        // Math functions
-        // abs: Int -> Int
-        env.insert("abs".to_string(), Scheme::mono(Type::fun(Type::Int, Type::Int)));
+        // ========================================================================
+        // Conversion intrinsics (wrapped by lib/Convert.ivy)
+        // ========================================================================
 
-        // min: Int -> Int -> Int
+        // __floatFromInt: Int -> Float
         env.insert(
-            "min".to_string(),
-            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+            "__floatFromInt".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::Float)),
         );
 
-        // max: Int -> Int -> Int
+        // __floatToInt: Float -> Int
         env.insert(
-            "max".to_string(),
-            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+            "__floatToInt".to_string(),
+            Scheme::mono(Type::fun(Type::Float, Type::Int)),
         );
 
-        // pow: Int -> Int -> Int
+        // __floatToString: Float -> String
         env.insert(
-            "pow".to_string(),
-            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+            "__floatToString".to_string(),
+            Scheme::mono(Type::fun(Type::Float, Type::String)),
         );
 
-        // sqrt: Int -> Float (or Float -> Float, but we convert Int to Float)
-        env.insert("sqrt".to_string(), Scheme::mono(Type::fun(Type::Int, Type::Float)));
-
-        // floor: Float -> Int
-        env.insert("floor".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
-
-        // ceil: Float -> Int
-        env.insert("ceil".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
-
-        // round: Float -> Int
-        env.insert("round".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
-
-        // random: Int -> Int -> Int
+        // __intToString: Int -> String
         env.insert(
-            "random".to_string(),
-            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+            "__intToString".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::String)),
         );
 
-        // String functions
-        // strLength: String -> Int
+        // __stringToInt: String -> Int (may fail at runtime)
         env.insert(
-            "strLength".to_string(),
+            "__stringToInt".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::Int)),
         );
 
-        // strTrim: String -> String
+        // __stringToFloat: String -> Float (may fail at runtime)
         env.insert(
-            "strTrim".to_string(),
+            "__stringToFloat".to_string(),
+            Scheme::mono(Type::fun(Type::String, Type::Float)),
+        );
+
+        // __tryStringToInt: String -> Option Int (safe parse)
+        env.insert(
+            "__tryStringToInt".to_string(),
+            Scheme::mono(Type::fun(Type::String, Type::named_with("Option", vec![Type::Int]))),
+        );
+
+        // __tryStringToFloat: String -> Option Float (safe parse)
+        env.insert(
+            "__tryStringToFloat".to_string(),
+            Scheme::mono(Type::fun(Type::String, Type::named_with("Option", vec![Type::Float]))),
+        );
+
+        // ========================================================================
+        // Math intrinsics (wrapped by lib/Math.ivy)
+        // ========================================================================
+
+        // __abs: Int -> Int (runtime handles Float too)
+        env.insert("__abs".to_string(), Scheme::mono(Type::fun(Type::Int, Type::Int)));
+
+        // __min: Int -> Int -> Int
+        env.insert(
+            "__min".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+        );
+
+        // __max: Int -> Int -> Int
+        env.insert(
+            "__max".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+        );
+
+        // __pow: Float -> Float -> Float
+        env.insert(
+            "__pow".to_string(),
+            Scheme::mono(Type::fun(Type::Float, Type::fun(Type::Float, Type::Float))),
+        );
+
+        // __sqrt: Float -> Float
+        env.insert("__sqrt".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Float)));
+
+        // __floor: Float -> Int
+        env.insert("__floor".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
+
+        // __ceil: Float -> Int
+        env.insert("__ceil".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
+
+        // __round: Float -> Int
+        env.insert("__round".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
+
+        // __random: Int -> Int -> Int
+        env.insert(
+            "__random".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Int))),
+        );
+
+        // ========================================================================
+        // String intrinsics (wrapped by lib/String.ivy)
+        // ========================================================================
+
+        // __strLength: String -> Int
+        env.insert(
+            "__strLength".to_string(),
+            Scheme::mono(Type::fun(Type::String, Type::Int)),
+        );
+
+        // __strTrim: String -> String
+        env.insert(
+            "__strTrim".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::String)),
         );
 
-        // strContains: String -> String -> Bool
+        // __strContains: String -> String -> Bool
         env.insert(
-            "strContains".to_string(),
+            "__strContains".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::fun(Type::String, Type::Bool))),
         );
 
-        // strSubstring: String -> Int -> Int -> String
+        // __strSubstring: String -> Int -> Int -> String
         env.insert(
-            "strSubstring".to_string(),
+            "__strSubstring".to_string(),
             Scheme::mono(Type::fun(
                 Type::String,
                 Type::fun(Type::Int, Type::fun(Type::Int, Type::String)),
             )),
         );
 
-        // strSplit: String -> String -> [String]
+        // __strSplit: String -> String -> [String]
         env.insert(
-            "strSplit".to_string(),
+            "__strSplit".to_string(),
             Scheme::mono(Type::fun(
                 Type::String,
                 Type::fun(Type::String, Type::List(Box::new(Type::String))),
             )),
         );
 
-        // strToUpper: String -> String
+        // __strToUpper: String -> String
         env.insert(
-            "strToUpper".to_string(),
+            "__strToUpper".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::String)),
         );
 
-        // strToLower: String -> String
+        // __strToLower: String -> String
         env.insert(
-            "strToLower".to_string(),
+            "__strToLower".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::String)),
         );
 
-        // strStartsWith: String -> String -> Bool
+        // __strStartsWith: String -> String -> Bool
         env.insert(
-            "strStartsWith".to_string(),
+            "__strStartsWith".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::fun(Type::String, Type::Bool))),
         );
 
-        // strEndsWith: String -> String -> Bool
+        // __strEndsWith: String -> String -> Bool
         env.insert(
-            "strEndsWith".to_string(),
+            "__strEndsWith".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::fun(Type::String, Type::Bool))),
         );
 
-        // strReplace: String -> String -> String -> String
+        // __strReplace: String -> String -> String -> String
         env.insert(
-            "strReplace".to_string(),
+            "__strReplace".to_string(),
             Scheme::mono(Type::fun(
                 Type::String,
                 Type::fun(Type::String, Type::fun(Type::String, Type::String)),
             )),
         );
 
-        // File I/O functions
-        // readFile: String -> String
+        // ========================================================================
+        // File I/O intrinsics (wrapped by lib/File.ivy)
+        // ========================================================================
+
+        // __readFile: String -> String
         env.insert(
-            "readFile".to_string(),
+            "__readFile".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::String)),
         );
 
-        // writeFile: String -> String -> ()
+        // __writeFile: String -> String -> ()
         env.insert(
-            "writeFile".to_string(),
+            "__writeFile".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::fun(Type::String, Type::Unit))),
         );
 
-        // appendFile: String -> String -> ()
+        // __appendFile: String -> String -> ()
         env.insert(
-            "appendFile".to_string(),
+            "__appendFile".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::fun(Type::String, Type::Unit))),
         );
 
-        // fileExists: String -> Bool
+        // __fileExists: String -> Bool
         env.insert(
-            "fileExists".to_string(),
+            "__fileExists".to_string(),
             Scheme::mono(Type::fun(Type::String, Type::Bool)),
         );
 
         env
     }
 
-    /// Look up a variable's type scheme.
+    /// Look up a variable's type scheme
     pub fn get(&self, name: &str) -> Option<&Scheme> {
         self.bindings.get(name)
     }
 
-    /// Insert a new binding.
+    /// Insert a new binding
     pub fn insert(&mut self, name: String, scheme: Scheme) {
         self.bindings.insert(name, scheme);
     }
 
-    /// Remove a binding.
+    /// Remove a binding
     pub fn remove(&mut self, name: &str) {
         self.bindings.remove(name);
     }
 
-    /// Create an extended environment with additional bindings.
+    /// Insert a module with its exported type schemes
+    pub fn insert_module(&mut self, name: String, exports: HashMap<String, Scheme>) {
+        self.modules.insert(name, exports);
+    }
+
+    /// Get all exports of a module
+    pub fn get_module(&self, name: &str) -> Option<&HashMap<String, Scheme>> {
+        self.modules.get(name)
+    }
+
+    /// Get a specific export from a module
+    pub fn get_module_export(&self, module: &str, name: &str) -> Option<&Scheme> {
+        self.modules.get(module).and_then(|exports| exports.get(name))
+    }
+
+    /// Check if a name refers to a loaded module
+    pub fn is_module(&self, name: &str) -> bool {
+        self.modules.contains_key(name)
+    }
+
+    /// Create an extended environment with additional bindings
     pub fn extend(&self, bindings: Vec<(String, Scheme)>) -> TypeEnv {
         let mut new_env = self.clone();
         for (name, scheme) in bindings {
@@ -249,7 +335,7 @@ impl TypeEnv {
         new_env
     }
 
-    /// Apply a substitution to all type schemes in the environment.
+    /// Apply a substitution to all type schemes in the environment
     pub fn apply(&self, subst: &Subst) -> TypeEnv {
         TypeEnv {
             bindings: self
@@ -257,6 +343,7 @@ impl TypeEnv {
                 .iter()
                 .map(|(name, scheme)| (name.clone(), subst.apply_scheme(scheme)))
                 .collect(),
+            modules: self.modules.clone(),
         }
     }
 
@@ -266,14 +353,10 @@ impl TypeEnv {
     }
 
     /// Generalize a type into a type scheme.
-    ///
-    /// This quantifies all type variables that are free in the type
-    /// but not free in the environment.
     pub fn generalize(&self, ty: &Type) -> Scheme {
         let env_vars = self.free_vars();
         let ty_vars = ty.free_vars();
 
-        // Variables to generalize: in type but not in environment
         let vars: Vec<TypeVar> = ty_vars.difference(&env_vars).copied().collect();
 
         if vars.is_empty() {
@@ -290,7 +373,7 @@ impl Default for TypeEnv {
     }
 }
 
-/// Type variable generator for fresh variables.
+/// Type variable generator for fresh variables
 #[derive(Debug, Clone)]
 pub struct TypeVarGen {
     next_id: u32,
@@ -301,19 +384,19 @@ impl TypeVarGen {
         TypeVarGen { next_id: 0 }
     }
 
-    /// Generate a fresh type variable.
+    /// Generate a fresh type variable
     pub fn fresh(&mut self) -> TypeVar {
         let var = TypeVar(self.next_id);
         self.next_id += 1;
         var
     }
 
-    /// Generate a fresh type variable as a Type.
+    /// Generate a fresh type variable as a Type
     pub fn fresh_type(&mut self) -> Type {
         Type::Var(self.fresh())
     }
 
-    /// Instantiate a type scheme with fresh type variables.
+    /// Instantiate a type scheme with fresh type variables
     pub fn instantiate(&mut self, scheme: &Scheme) -> Type {
         if scheme.vars.is_empty() {
             return scheme.ty.clone();

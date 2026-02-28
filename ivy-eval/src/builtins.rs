@@ -52,6 +52,172 @@ pub static BUILTIN_SHOW: BuiltinFn = BuiltinFn {
     func: builtin_show,
 };
 
+// ============================================================================
+// Type conversion intrinsics
+// ============================================================================
+
+/// Convert Int to Float
+pub static BUILTIN_FLOAT_FROM_INT: BuiltinFn = BuiltinFn {
+    name: "__floatFromInt",
+    arity: 1,
+    func: builtin_float_from_int,
+};
+
+/// Convert Float to Int (truncates toward zero)
+pub static BUILTIN_FLOAT_TO_INT: BuiltinFn = BuiltinFn {
+    name: "__floatToInt",
+    arity: 1,
+    func: builtin_float_to_int,
+};
+
+/// Convert Float to String
+pub static BUILTIN_FLOAT_TO_STRING: BuiltinFn = BuiltinFn {
+    name: "__floatToString",
+    arity: 1,
+    func: builtin_float_to_string,
+};
+
+/// Parse String to Int
+pub static BUILTIN_STRING_TO_INT: BuiltinFn = BuiltinFn {
+    name: "__stringToInt",
+    arity: 1,
+    func: builtin_string_to_int,
+};
+
+/// Parse String to Float
+pub static BUILTIN_STRING_TO_FLOAT: BuiltinFn = BuiltinFn {
+    name: "__stringToFloat",
+    arity: 1,
+    func: builtin_string_to_float,
+};
+
+/// Try to parse String to Int, returns Option Int
+pub static BUILTIN_TRY_STRING_TO_INT: BuiltinFn = BuiltinFn {
+    name: "__tryStringToInt",
+    arity: 1,
+    func: builtin_try_string_to_int,
+};
+
+/// Try to parse String to Float, returns Option Float
+pub static BUILTIN_TRY_STRING_TO_FLOAT: BuiltinFn = BuiltinFn {
+    name: "__tryStringToFloat",
+    arity: 1,
+    func: builtin_try_string_to_float,
+};
+
+fn builtin_float_from_int(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Int(n) => Ok(Value::Float(*n as f64)),
+        v => Err(EvalError::TypeError {
+            expected: "Int".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_float_to_int(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Float(f) => Ok(Value::Int(*f as i64)),
+        v => Err(EvalError::TypeError {
+            expected: "Float".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_float_to_string(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Float(f) => Ok(Value::String(f.to_string())),
+        v => Err(EvalError::TypeError {
+            expected: "Float".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_string_to_int(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::String(s) => match s.trim().parse::<i64>() {
+            Ok(n) => Ok(Value::Int(n)),
+            Err(_) => Err(EvalError::ValueError {
+                message: format!("cannot parse '{}' as Int", s),
+                span: Span::default(),
+            }),
+        },
+        v => Err(EvalError::TypeError {
+            expected: "String".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_string_to_float(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::String(s) => match s.trim().parse::<f64>() {
+            Ok(f) => Ok(Value::Float(f)),
+            Err(_) => Err(EvalError::ValueError {
+                message: format!("cannot parse '{}' as Float", s),
+                span: Span::default(),
+            }),
+        },
+        v => Err(EvalError::TypeError {
+            expected: "String".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+/// Helper to create Option None value
+fn option_none() -> Value {
+    Value::Constructor {
+        type_name: "Option".to_string(),
+        variant: "None".to_string(),
+        fields: vec![],
+    }
+}
+
+/// Helper to create Option Some value
+fn option_some(value: Value) -> Value {
+    Value::Constructor {
+        type_name: "Option".to_string(),
+        variant: "Some".to_string(),
+        fields: vec![value],
+    }
+}
+
+fn builtin_try_string_to_int(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::String(s) => match s.trim().parse::<i64>() {
+            Ok(n) => Ok(option_some(Value::Int(n))),
+            Err(_) => Ok(option_none()),
+        },
+        v => Err(EvalError::TypeError {
+            expected: "String".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_try_string_to_float(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::String(s) => match s.trim().parse::<f64>() {
+            Ok(f) => Ok(option_some(Value::Float(f))),
+            Err(_) => Ok(option_none()),
+        },
+        v => Err(EvalError::TypeError {
+            expected: "String".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
 fn builtin_print(args: &[Value]) -> EvalResult<Value> {
     match &args[0] {
         Value::String(s) => print!("{}", s),
@@ -95,7 +261,7 @@ fn builtin_read_int(args: &[Value]) -> EvalResult<Value> {
             io::stdin().read_line(&mut input).ok();
             match input.trim().parse::<i64>() {
                 Ok(n) => Ok(Value::Int(n)),
-                Err(_) => Ok(Value::Int(0)), // Could return error instead
+                Err(_) => Ok(Value::Int(0)),
             }
         }
         v => Err(EvalError::TypeError {
@@ -110,65 +276,69 @@ fn builtin_show(args: &[Value]) -> EvalResult<Value> {
     Ok(Value::String(format!("{}", args[0])))
 }
 
+// ============================================================================
+// Math intrinsics (wrapped by lib/Math.ivy)
+// ============================================================================
+
 /// Absolute value
 pub static BUILTIN_ABS: BuiltinFn = BuiltinFn {
-    name: "abs",
+    name: "__abs",
     arity: 1,
     func: builtin_abs,
 };
 
 /// Minimum of two numbers
 pub static BUILTIN_MIN: BuiltinFn = BuiltinFn {
-    name: "min",
+    name: "__min",
     arity: 2,
     func: builtin_min,
 };
 
 /// Maximum of two numbers
 pub static BUILTIN_MAX: BuiltinFn = BuiltinFn {
-    name: "max",
+    name: "__max",
     arity: 2,
     func: builtin_max,
 };
 
 /// Power (base^exponent)
 pub static BUILTIN_POW: BuiltinFn = BuiltinFn {
-    name: "pow",
+    name: "__pow",
     arity: 2,
     func: builtin_pow,
 };
 
 /// Square root
 pub static BUILTIN_SQRT: BuiltinFn = BuiltinFn {
-    name: "sqrt",
+    name: "__sqrt",
     arity: 1,
     func: builtin_sqrt,
 };
 
 /// Floor (round down)
 pub static BUILTIN_FLOOR: BuiltinFn = BuiltinFn {
-    name: "floor",
+    name: "__floor",
     arity: 1,
     func: builtin_floor,
 };
 
 /// Ceiling (round up)
 pub static BUILTIN_CEIL: BuiltinFn = BuiltinFn {
-    name: "ceil",
+    name: "__ceil",
     arity: 1,
     func: builtin_ceil,
 };
 
 /// Round to nearest integer
 pub static BUILTIN_ROUND: BuiltinFn = BuiltinFn {
-    name: "round",
+    name: "__round",
     arity: 1,
     func: builtin_round,
 };
 
 /// Random integer in range [min, max]
 pub static BUILTIN_RANDOM: BuiltinFn = BuiltinFn {
-    name: "random",
+    name: "__random",
     arity: 2,
     func: builtin_random,
 };
@@ -290,72 +460,76 @@ fn builtin_random(args: &[Value]) -> EvalResult<Value> {
     }
 }
 
+// ============================================================================
+// String intrinsics (wrapped by lib/String.ivy)
+// ============================================================================
+
 /// String length
 pub static BUILTIN_STR_LENGTH: BuiltinFn = BuiltinFn {
-    name: "strLength",
+    name: "__strLength",
     arity: 1,
     func: builtin_str_length,
 };
 
 /// String trim (whitespace)
 pub static BUILTIN_STR_TRIM: BuiltinFn = BuiltinFn {
-    name: "strTrim",
+    name: "__strTrim",
     arity: 1,
     func: builtin_str_trim,
 };
 
 /// String contains
 pub static BUILTIN_STR_CONTAINS: BuiltinFn = BuiltinFn {
-    name: "strContains",
+    name: "__strContains",
     arity: 2,
     func: builtin_str_contains,
 };
 
 /// String substring
 pub static BUILTIN_STR_SUBSTRING: BuiltinFn = BuiltinFn {
-    name: "strSubstring",
+    name: "__strSubstring",
     arity: 3,
     func: builtin_str_substring,
 };
 
 /// String split
 pub static BUILTIN_STR_SPLIT: BuiltinFn = BuiltinFn {
-    name: "strSplit",
+    name: "__strSplit",
     arity: 2,
     func: builtin_str_split,
 };
 
 /// String to uppercase
 pub static BUILTIN_STR_TO_UPPER: BuiltinFn = BuiltinFn {
-    name: "strToUpper",
+    name: "__strToUpper",
     arity: 1,
     func: builtin_str_to_upper,
 };
 
 /// String to lowercase
 pub static BUILTIN_STR_TO_LOWER: BuiltinFn = BuiltinFn {
-    name: "strToLower",
+    name: "__strToLower",
     arity: 1,
     func: builtin_str_to_lower,
 };
 
 /// String starts with
 pub static BUILTIN_STR_STARTS_WITH: BuiltinFn = BuiltinFn {
-    name: "strStartsWith",
+    name: "__strStartsWith",
     arity: 2,
     func: builtin_str_starts_with,
 };
 
 /// String ends with
 pub static BUILTIN_STR_ENDS_WITH: BuiltinFn = BuiltinFn {
-    name: "strEndsWith",
+    name: "__strEndsWith",
     arity: 2,
     func: builtin_str_ends_with,
 };
 
 /// String replace
 pub static BUILTIN_STR_REPLACE: BuiltinFn = BuiltinFn {
-    name: "strReplace",
+    name: "__strReplace",
     arity: 3,
     func: builtin_str_replace,
 };
@@ -496,30 +670,34 @@ fn builtin_str_replace(args: &[Value]) -> EvalResult<Value> {
     }
 }
 
+// ============================================================================
+// File I/O intrinsics (wrapped by lib/File.ivy)
+// ============================================================================
+
 /// Read entire file as string
 pub static BUILTIN_READ_FILE: BuiltinFn = BuiltinFn {
-    name: "readFile",
+    name: "__readFile",
     arity: 1,
     func: builtin_read_file,
 };
 
 /// Write string to file
 pub static BUILTIN_WRITE_FILE: BuiltinFn = BuiltinFn {
-    name: "writeFile",
+    name: "__writeFile",
     arity: 2,
     func: builtin_write_file,
 };
 
 /// Append string to file
 pub static BUILTIN_APPEND_FILE: BuiltinFn = BuiltinFn {
-    name: "appendFile",
+    name: "__appendFile",
     arity: 2,
     func: builtin_append_file,
 };
 
 /// Check if file exists
 pub static BUILTIN_FILE_EXISTS: BuiltinFn = BuiltinFn {
-    name: "fileExists",
+    name: "__fileExists",
     arity: 1,
     func: builtin_file_exists,
 };

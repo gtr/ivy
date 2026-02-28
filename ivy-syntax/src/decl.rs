@@ -1,22 +1,29 @@
-//! Declaration types.
-
 use crate::ast::Ident;
 use crate::expr::{Expr, Param};
 use crate::pattern::Pattern;
 use crate::span::{Span, Spanned};
 use crate::types::TypeExpr;
 
+/// Import kind for the different import syntaxes.
+#[derive(Debug, Clone)]
+pub enum ImportKind {
+    Qualified,
+    Alias(Ident),
+    All,
+    Items(Vec<Ident>),
+}
+
 /// Top-level declaration variants.
 #[derive(Debug, Clone)]
 pub enum Decl {
-    /// Module declaration: `module Math;`, for example
-    Module { name: Ident },
+    Module {
+        name: Ident,
+    },
 
-    /// Import: `import Math;` or `import Math.{add, sub};`
+    /// Import declaration with Python-style syntax
     Import {
         path: Vec<Ident>,
-        /// None = import all, Some = selective import
-        items: Option<Vec<Ident>>,
+        kind: ImportKind,
     },
 
     /// Type definition: `type Option<a> = | None | Some(a);`
