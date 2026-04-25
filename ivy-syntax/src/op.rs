@@ -1,5 +1,7 @@
 //! Operators.
 
+use std::fmt;
+
 /// Binary operators.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinOp {
@@ -42,8 +44,8 @@ pub enum BinOp {
     Concat,
 }
 
-impl std::fmt::Display for BinOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for BinOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             BinOp::Add => "+",
             BinOp::Sub => "-",
@@ -74,8 +76,8 @@ pub enum UnaryOp {
     Not,
 }
 
-impl std::fmt::Display for UnaryOp {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for UnaryOp {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             UnaryOp::Neg => "-",
             UnaryOp::Not => "!",

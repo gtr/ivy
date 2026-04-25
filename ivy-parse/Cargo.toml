@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 description = "Lexer and parser for the Ivy programming language"
 
+[lints]
+workspace = true
+
 [dependencies]
 ivy-syntax.workspace = true
 thiserror.workspace = true

@@ -1,9 +1,12 @@
 //! Main evaluator for Ivy.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::{env, fs, mem};
 
+use ivy_syntax::decl::ImportKind;
 use ivy_syntax::{BinOp, Decl, Expr, FnBody, Literal, Program, Span, Spanned, TypeBody, UnaryOp};
 
 use crate::builtins::*;
@@ -149,12 +152,12 @@ impl Interpreter {
 
         let mut search_paths = vec![];
 
-        if let Ok(cwd) = std::env::current_dir() {
+        if let Ok(cwd) = env::current_dir() {
             search_paths.push(cwd.clone());
             search_paths.push(cwd.join("lib"));
         }
 
-        if let Ok(exe_path) = std::env::current_exe() {
+        if let Ok(exe_path) = env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 search_paths.push(exe_dir.join("lib"));
                 if let Some(parent) = exe_dir.parent() {
@@ -178,20 +181,20 @@ impl Interpreter {
     /// Try to load the prelude file.
     fn load_prelude(&mut self) {
         let prelude_paths = [
-            std::env::current_dir().ok().map(|d| d.join("lib/prelude.ivy")),
-            std::env::current_exe()
+            env::current_dir().ok().map(|d| d.join("lib/prelude.ivy")),
+            env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().map(|d| d.join("lib/prelude.ivy"))),
-            std::env::current_exe()
+            env::current_exe()
                 .ok()
                 .and_then(|p| p.parent().and_then(|d| d.parent().map(|d| d.join("lib/prelude.ivy")))),
         ];
 
         for path in prelude_paths.into_iter().flatten() {
             if path.exists() {
-                if let Ok(source) = std::fs::read_to_string(&path) {
+                if let Ok(source) = fs::read_to_string(&path) {
                     if let Ok(program) = ivy_parse::parse(&source) {
-                        let mut public_names = std::collections::HashSet::new();
+                        let mut public_names = HashSet::new();
                         for decl in &program.declarations {
                             match &decl.node {
                                 Decl::Fn(fn_decl) if fn_decl.is_pub => {
@@ -318,14 +321,7 @@ impl Interpreter {
     }
 
     /// Process an import declaration.
-    fn process_import(
-        &mut self,
-        path: &[ivy_syntax::Ident],
-        kind: &ivy_syntax::decl::ImportKind,
-        span: Span,
-    ) -> EvalResult<()> {
-        use ivy_syntax::decl::ImportKind;
-
+    fn process_import(&mut self, path: &[ivy_syntax::Ident], kind: &ImportKind, span: Span) -> EvalResult<()> {
         if path.is_empty() {
             return Ok(());
         }
@@ -352,7 +348,7 @@ impl Interpreter {
                     let program = module.program.clone();
                     let public_names = module.public_names.clone();
 
-                    let saved_env = std::mem::take(&mut self.env);
+                    let saved_env = mem::take(&mut self.env);
 
                     self.register_builtins();
                     let grouped = self.collect_declarations(&program.declarations);
@@ -571,9 +567,9 @@ impl Interpreter {
                 span: ident.span,
             }),
 
-            Expr::Binary { left, op, right } => self.eval_binary(left, &op.node, right, span),
+            Expr::Binary { left, op, right } => self.eval_binary(left, op.node, right, span),
 
-            Expr::Unary { op, operand } => self.eval_unary(&op.node, operand, span),
+            Expr::Unary { op, operand } => self.eval_unary(op.node, operand, span),
 
             Expr::Let {
                 is_mut, pattern, value, ..
@@ -700,13 +696,7 @@ impl Interpreter {
     }
 
     /// Evaluate binary operation.
-    fn eval_binary(
-        &mut self,
-        left: &Spanned<Expr>,
-        op: &BinOp,
-        right: &Spanned<Expr>,
-        span: Span,
-    ) -> EvalResult<Value> {
+    fn eval_binary(&mut self, left: &Spanned<Expr>, op: BinOp, right: &Spanned<Expr>, span: Span) -> EvalResult<Value> {
         // Short-circuit for && and ||
         match op {
             BinOp::And => {
@@ -826,10 +816,10 @@ impl Interpreter {
             },
             BinOp::Eq => Ok(Value::Bool(values_equal(&l, &r))),
             BinOp::Ne => Ok(Value::Bool(!values_equal(&l, &r))),
-            BinOp::Lt => compare_values(&l, &r, |ord| ord == std::cmp::Ordering::Less, span),
-            BinOp::Le => compare_values(&l, &r, |ord| ord != std::cmp::Ordering::Greater, span),
-            BinOp::Gt => compare_values(&l, &r, |ord| ord == std::cmp::Ordering::Greater, span),
-            BinOp::Ge => compare_values(&l, &r, |ord| ord != std::cmp::Ordering::Less, span),
+            BinOp::Lt => compare_values(&l, &r, |ord| ord == Ordering::Less, span),
+            BinOp::Le => compare_values(&l, &r, |ord| ord != Ordering::Greater, span),
+            BinOp::Gt => compare_values(&l, &r, |ord| ord == Ordering::Greater, span),
+            BinOp::Ge => compare_values(&l, &r, |ord| ord != Ordering::Less, span),
             BinOp::Cons => match r {
                 Value::List(list) => Ok(Value::List(Rc::new(ListValue::Cons(l, list)))),
                 _ => Err(EvalError::TypeError {
@@ -852,7 +842,7 @@ impl Interpreter {
     }
 
     /// Evaluate unary operation.
-    fn eval_unary(&mut self, op: &UnaryOp, operand: &Spanned<Expr>, span: Span) -> EvalResult<Value> {
+    fn eval_unary(&mut self, op: UnaryOp, operand: &Spanned<Expr>, span: Span) -> EvalResult<Value> {
         let val = self.eval_expr(operand)?;
         match op {
             UnaryOp::Neg => match val {
@@ -934,11 +924,11 @@ impl Interpreter {
 
                 if args.len() > arity {
                     let (now, later) = args.split_at(arity);
-                    let result = self.apply_closure(closure, now.to_vec(), span)?;
+                    let result = self.apply_closure(closure, now, span)?;
                     return self.apply(result, later.to_vec(), span);
                 }
 
-                self.apply_closure(closure, args, span)
+                self.apply_closure(closure, &args, span)
             }
 
             Value::MultiClause(ref multi) => {
@@ -953,11 +943,11 @@ impl Interpreter {
 
                 if args.len() > arity {
                     let (now, later) = args.split_at(arity);
-                    let result = self.apply_multi_clause(multi, now.to_vec(), span)?;
+                    let result = self.apply_multi_clause(multi, now, span)?;
                     return self.apply(result, later.to_vec(), span);
                 }
 
-                self.apply_multi_clause(multi, args, span)
+                self.apply_multi_clause(multi, &args, span)
             }
 
             Value::Builtin(ref builtin) => {
@@ -997,8 +987,8 @@ impl Interpreter {
     }
 
     /// Apply a closure with exact number of arguments
-    fn apply_closure(&mut self, closure: &Rc<Closure>, args: Vec<Value>, span: Span) -> EvalResult<Value> {
-        let saved_env = std::mem::replace(&mut self.env, closure.env.fork());
+    fn apply_closure(&mut self, closure: &Rc<Closure>, args: &[Value], span: Span) -> EvalResult<Value> {
+        let saved_env = mem::replace(&mut self.env, closure.env.fork());
         self.env.push_scope();
 
         for (param, arg) in closure.params.iter().zip(args.iter()) {
@@ -1028,7 +1018,7 @@ impl Interpreter {
     }
 
     /// Apply a multi-clause function.
-    fn apply_multi_clause(&mut self, multi: &MultiClauseFn, args: Vec<Value>, span: Span) -> EvalResult<Value> {
+    fn apply_multi_clause(&mut self, multi: &MultiClauseFn, args: &[Value], span: Span) -> EvalResult<Value> {
         for clause in &multi.clauses {
             if clause.params.len() != args.len() {
                 continue;
@@ -1048,7 +1038,7 @@ impl Interpreter {
             }
 
             if matched {
-                let saved_env = std::mem::replace(&mut self.env, multi.env.fork());
+                let saved_env = mem::replace(&mut self.env, multi.env.fork());
                 self.env.push_scope();
 
                 for (name, val) in all_bindings {
@@ -1376,11 +1366,11 @@ fn lists_equal(a: &ListValue, b: &ListValue) -> bool {
 /// Compare two values.
 fn compare_values<F>(a: &Value, b: &Value, cmp: F, span: Span) -> EvalResult<Value>
 where
-    F: Fn(std::cmp::Ordering) -> bool,
+    F: Fn(Ordering) -> bool,
 {
     let ord = match (a, b) {
         (Value::Int(x), Value::Int(y)) => x.cmp(y),
-        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (Value::Float(x), Value::Float(y)) => x.partial_cmp(y).unwrap_or(Ordering::Equal),
         (Value::String(x), Value::String(y)) => x.cmp(y),
         (Value::Char(x), Value::Char(y)) => x.cmp(y),
         _ => {
@@ -1399,9 +1389,8 @@ fn concat_lists(a: &ListValue, b: &Rc<ListValue>) -> Value {
     match a {
         ListValue::Nil => Value::List(b.clone()),
         ListValue::Cons(head, tail) => {
-            let new_tail = match concat_lists(tail, b) {
-                Value::List(l) => l,
-                _ => unreachable!(),
+            let Value::List(new_tail) = concat_lists(tail, b) else {
+                unreachable!()
             };
             Value::List(Rc::new(ListValue::Cons(head.clone(), new_tail)))
         }

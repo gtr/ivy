@@ -9,18 +9,19 @@
 use crate::env::{TypeEnv, TypeVarGen};
 use crate::error::{TypeError, TypeResult};
 use crate::exhaustiveness;
-use crate::registry::TypeRegistry;
+use crate::registry::{RecordFieldInfo, TypeRegistry};
 use crate::subst::Subst;
-use crate::types::{Scheme, Type};
+use crate::types::{Scheme, Type, TypeVar};
 use crate::unify::unify_with_subst;
 use ivy_syntax::{
     expr::{Expr, MatchArm, Param},
     lit::Literal,
     op::{BinOp, UnaryOp},
     pattern::Pattern,
+    types::TypeExpr,
     Span, Spanned,
 };
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 /// Type checker state
 pub struct TypeChecker {
@@ -98,7 +99,7 @@ impl TypeChecker {
                 let expected_fields_opt = self
                     .registry
                     .get_record_fields(&name.name)
-                    .map(|fields| fields.to_vec());
+                    .map(<[RecordFieldInfo]>::to_vec);
 
                 if let Some(expected_fields) = expected_fields_opt {
                     if fields.len() != expected_fields.len() {
@@ -115,7 +116,7 @@ impl TypeChecker {
                         // Find the expected type for this field
                         if let Some(expected) = expected_fields.iter().find(|f| f.name == field.name.name) {
                             // unify with expected type (expected first for correct error messages)
-                            crate::unify::unify_with_subst(&expected.ty, &field_ty, &mut self.subst, field.span)?;
+                            unify_with_subst(&expected.ty, &field_ty, &mut self.subst, field.span)?;
                         } else {
                             return Err(TypeError::undefined_field(&name.name, &field.name.name, field.span));
                         }
@@ -268,7 +269,7 @@ impl TypeChecker {
     fn infer_let(
         &mut self,
         pattern: &Spanned<Pattern>,
-        ty_ann: Option<&Spanned<ivy_syntax::types::TypeExpr>>,
+        ty_ann: Option<&Spanned<TypeExpr>>,
         value: &Spanned<Expr>,
         env: &TypeEnv,
     ) -> TypeResult<Type> {
@@ -365,7 +366,7 @@ impl TypeChecker {
     fn infer_lambda(
         &mut self,
         params: &[Param],
-        return_ty: Option<&Spanned<ivy_syntax::types::TypeExpr>>,
+        return_ty: Option<&Spanned<TypeExpr>>,
         body: &Spanned<Expr>,
         env: &TypeEnv,
     ) -> TypeResult<Type> {
@@ -720,7 +721,7 @@ impl TypeChecker {
     }
 
     /// Generate a fresh type variable ID.
-    pub fn fresh_var(&mut self) -> crate::types::TypeVar {
+    pub fn fresh_var(&mut self) -> TypeVar {
         self.gen.fresh()
     }
 
@@ -730,19 +731,17 @@ impl TypeChecker {
     }
 
     /// Convert a type expression to a Type.
-    pub fn type_expr_to_type(&mut self, ty_expr: &ivy_syntax::types::TypeExpr, env: &TypeEnv) -> Type {
+    pub fn type_expr_to_type(&mut self, ty_expr: &TypeExpr, env: &TypeEnv) -> Type {
         self.type_expr_to_type_scoped(ty_expr, env, None)
     }
 
     /// Convert a type expression to a Type with optional type variable scoping.
     pub fn type_expr_to_type_scoped(
         &mut self,
-        ty_expr: &ivy_syntax::types::TypeExpr,
+        ty_expr: &TypeExpr,
         env: &TypeEnv,
-        mut scope: Option<&mut std::collections::HashMap<String, Type>>,
+        mut scope: Option<&mut HashMap<String, Type>>,
     ) -> Type {
-        use ivy_syntax::types::TypeExpr;
-
         match ty_expr {
             TypeExpr::Named(ident) => {
                 let name = &ident.name;
@@ -821,7 +820,7 @@ impl TypeChecker {
 
     /// Check if a name looks like a type variable (short uppercase name, 1-3 chars).
     fn looks_like_type_var(name: &str) -> bool {
-        name.len() <= 3 && name.chars().all(|c| c.is_uppercase())
+        name.len() <= 3 && name.chars().all(char::is_uppercase)
     }
 
     /// Get the final type after applying all substitutions.

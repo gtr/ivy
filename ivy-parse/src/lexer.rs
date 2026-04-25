@@ -1,5 +1,7 @@
 //! Lexer for Ivy
 
+use std::mem;
+
 use crate::error::{LexError, LexResult};
 use crate::token::{Token, TokenKind};
 use ivy_syntax::Span;
@@ -42,7 +44,7 @@ impl<'a> Lexer<'a> {
         }
 
         self.tokens.push(Token::eof(self.offset));
-        Ok(std::mem::take(&mut self.tokens))
+        Ok(mem::take(&mut self.tokens))
     }
 
     /// Check if we're at the end of input.

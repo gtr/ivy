@@ -11,9 +11,9 @@ pub mod unify;
 pub use env::{TypeEnv, TypeVarGen};
 pub use error::{TypeError, TypeErrorKind, TypeResult};
 pub use infer::TypeChecker;
-use ivy_syntax::decl::{Decl, FnBody, FnDecl};
+use ivy_syntax::decl::{Decl, FnBody, FnDecl, ImportKind, TypeBody};
 use ivy_syntax::pattern::Pattern;
-use ivy_syntax::{Program, Spanned};
+use ivy_syntax::{Ident, Program, Spanned};
 pub use registry::{TypeRegistry, VariantInfo};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -103,8 +103,8 @@ fn check_import(
     checker: &mut TypeChecker,
     env: &mut TypeEnv,
     search_paths: &[PathBuf],
-    path: &[ivy_syntax::Ident],
-    kind: &ivy_syntax::decl::ImportKind,
+    path: &[Ident],
+    kind: &ImportKind,
 ) -> TypeResult<()> {
     if path.is_empty() {
         return Ok(());
@@ -130,19 +130,13 @@ fn check_import(
     checker.loaded_modules.insert(module_name.clone());
 
     // Load and type check the module
-    let file_path = match resolve_module_path(&path_strings, search_paths) {
-        Some(p) => p,
-        None => {
-            checker.loaded_modules.remove(&module_name);
-            return Err(TypeError::module_not_found(&module_name, span));
-        }
+    let Some(file_path) = resolve_module_path(&path_strings, search_paths) else {
+        checker.loaded_modules.remove(&module_name);
+        return Err(TypeError::module_not_found(&module_name, span));
     };
-    let source = match fs::read_to_string(&file_path) {
-        Ok(s) => s,
-        Err(e) => {
-            checker.loaded_modules.remove(&module_name);
-            return Err(TypeError::module_io_error(&module_name, &e.to_string(), span));
-        }
+    let Ok(source) = fs::read_to_string(&file_path) else {
+        checker.loaded_modules.remove(&module_name);
+        return Err(TypeError::module_io_error(&module_name, "failed to read file", span));
     };
     let module_program = match ivy_parse::parse(&source) {
         Ok(p) => p,
@@ -169,9 +163,7 @@ fn check_import(
 }
 
 /// Handle the different import kinds after module is loaded.
-fn handle_import_kind(env: &mut TypeEnv, module_name: &str, kind: &ivy_syntax::decl::ImportKind) -> TypeResult<()> {
-    use ivy_syntax::decl::ImportKind;
-
+fn handle_import_kind(env: &mut TypeEnv, module_name: &str, kind: &ImportKind) -> TypeResult<()> {
     match kind {
         ImportKind::Qualified => Ok(()),
         ImportKind::Alias(alias) => {
@@ -237,7 +229,7 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
     let existing_scheme = env.get(fn_name).cloned();
     let mut param_types = Vec::new();
     let mut bindings = Vec::new();
-    let mut type_var_scope = std::collections::HashMap::new();
+    let mut type_var_scope = HashMap::new();
 
     for param in &fn_decl.params {
         let ty = if let Some(ann) = &param.ty {
@@ -390,14 +382,12 @@ fn collect_pattern_names(pattern: &Pattern, names: &mut HashSet<String>) {
 
 /// Register type constructors from a type definition.
 fn register_type_constructors(
-    name: &ivy_syntax::ast::Ident,
-    params: &[ivy_syntax::ast::Ident],
-    body: &ivy_syntax::decl::TypeBody,
+    name: &Ident,
+    params: &[Ident],
+    body: &TypeBody,
     env: &mut TypeEnv,
     checker: &mut TypeChecker,
 ) {
-    use ivy_syntax::decl::TypeBody;
-
     let type_params: Vec<TypeVar> = params.iter().map(|_| checker.fresh_var()).collect();
     let result_ty = if type_params.is_empty() {
         Type::named(&name.name)

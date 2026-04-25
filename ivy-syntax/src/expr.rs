@@ -1,5 +1,3 @@
-//! Expression types.
-
 use crate::ast::Ident;
 use crate::lit::Literal;
 use crate::op::{BinOp, UnaryOp};
@@ -103,16 +101,12 @@ pub enum Expr {
 /// A match arm: | pattern -> expr
 #[derive(Debug, Clone)]
 pub struct MatchArm {
-    /// The pattern to match.
     pub pattern: Spanned<Pattern>,
-    /// The body expression.
     pub body: Spanned<Expr>,
-    /// The span of the entire arm.
     pub span: Span,
 }
 
 impl MatchArm {
-    /// Create a new match arm.
     pub fn new(pattern: Spanned<Pattern>, body: Spanned<Expr>, span: Span) -> Self {
         Self { pattern, body, span }
     }
@@ -121,21 +115,16 @@ impl MatchArm {
 /// Function parameter with optional type.
 #[derive(Debug, Clone)]
 pub struct Param {
-    /// The parameter pattern (usually just a name, but can be a pattern).
     pub pattern: Spanned<Pattern>,
-    /// Optional type annotation.
     pub ty: Option<Spanned<TypeExpr>>,
-    /// The span of the parameter.
     pub span: Span,
 }
 
 impl Param {
-    /// Create a new parameter
     pub fn new(pattern: Spanned<Pattern>, ty: Option<Spanned<TypeExpr>>, span: Span) -> Self {
         Self { pattern, ty, span }
     }
 
-    /// Create a simple named parameter without type
     pub fn named(name: Ident) -> Self {
         let span = name.span;
         Self {
@@ -149,16 +138,12 @@ impl Param {
 /// Field initializer: name: expr
 #[derive(Debug, Clone)]
 pub struct FieldInit {
-    /// The field name.
     pub name: Ident,
-    /// The field value.
     pub value: Spanned<Expr>,
-    /// The span of the entire initializer
     pub span: Span,
 }
 
 impl FieldInit {
-    /// Create a new field initializer
     pub fn new(name: Ident, value: Spanned<Expr>, span: Span) -> Self {
         Self { name, value, span }
     }

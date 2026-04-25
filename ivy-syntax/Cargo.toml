@@ -6,5 +6,8 @@ license.workspace = true
 authors.workspace = true
 description = "AST types and spans for the Ivy programming language"
 
+[lints]
+workspace = true
+
 [dependencies]
 miette = "7"  # For SourceSpan conversion

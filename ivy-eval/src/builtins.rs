@@ -3,7 +3,9 @@
 //! much of the standard library + built-in functions in ivy. For now, we'll
 //! label this as tech-debt and move on. A proper refactor *will* be done.
 
+use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 
 use crate::error::{EvalError, EvalResult};
 use crate::value::{vec_to_list, BuiltinFn, Value};
@@ -704,7 +706,7 @@ pub static BUILTIN_FILE_EXISTS: BuiltinFn = BuiltinFn {
 
 fn builtin_read_file(args: &[Value]) -> EvalResult<Value> {
     match &args[0] {
-        Value::String(path) => match std::fs::read_to_string(path) {
+        Value::String(path) => match fs::read_to_string(path) {
             Ok(content) => Ok(Value::String(content)),
             Err(e) => Err(EvalError::ModuleError {
                 message: format!("Failed to read file '{}': {}", path, e),
@@ -721,7 +723,7 @@ fn builtin_read_file(args: &[Value]) -> EvalResult<Value> {
 
 fn builtin_write_file(args: &[Value]) -> EvalResult<Value> {
     match (&args[0], &args[1]) {
-        (Value::String(path), Value::String(content)) => match std::fs::write(path, content) {
+        (Value::String(path), Value::String(content)) => match fs::write(path, content) {
             Ok(_) => Ok(Value::Unit),
             Err(e) => Err(EvalError::ModuleError {
                 message: format!("Failed to write file '{}': {}", path, e),
@@ -766,7 +768,7 @@ fn builtin_append_file(args: &[Value]) -> EvalResult<Value> {
 
 fn builtin_file_exists(args: &[Value]) -> EvalResult<Value> {
     match &args[0] {
-        Value::String(path) => Ok(Value::Bool(std::path::Path::new(path).exists())),
+        Value::String(path) => Ok(Value::Bool(Path::new(path).exists())),
         v => Err(EvalError::TypeError {
             expected: "String".to_string(),
             found: v.type_name(),

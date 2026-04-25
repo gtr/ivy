@@ -349,7 +349,10 @@ impl TypeEnv {
 
     /// Collect all free type variables in the environment.
     pub fn free_vars(&self) -> HashSet<TypeVar> {
-        self.bindings.values().flat_map(|scheme| scheme.free_vars()).collect()
+        self.bindings
+            .values()
+            .flat_map(super::types::Scheme::free_vars)
+            .collect()
     }
 
     /// Generalize a type into a type scheme.

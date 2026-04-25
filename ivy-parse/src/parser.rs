@@ -1,4 +1,4 @@
-use crate::error::{ParseError, ParseResult};
+use crate::error::{LexError, ParseError, ParseResult};
 use crate::lexer;
 use crate::token::{Token, TokenKind};
 use ivy_syntax::ast::{Ident, Program};
@@ -13,14 +13,14 @@ use ivy_syntax::types::TypeExpr;
 /// Parse source code into an AST.
 pub fn parse(source: &str) -> ParseResult<Program> {
     let tokens = lexer::lex(source).map_err(|e| match e {
-        crate::error::LexError::UnexpectedChar { ch, span } => ParseError::UnexpectedChar { ch, span },
-        crate::error::LexError::UnterminatedString { start } => ParseError::Unterminated { kind: "string", start },
-        crate::error::LexError::UnterminatedChar { start } => ParseError::Unterminated {
+        LexError::UnexpectedChar { ch, span } => ParseError::UnexpectedChar { ch, span },
+        LexError::UnterminatedString { start } => ParseError::Unterminated { kind: "string", start },
+        LexError::UnterminatedChar { start } => ParseError::Unterminated {
             kind: "character",
             start,
         },
-        crate::error::LexError::UnterminatedComment { start } => ParseError::Unterminated { kind: "comment", start },
-        crate::error::LexError::InvalidEscape { ch, span } => ParseError::InvalidEscape {
+        LexError::UnterminatedComment { start } => ParseError::Unterminated { kind: "comment", start },
+        LexError::InvalidEscape { ch, span } => ParseError::InvalidEscape {
             sequence: format!("\\{}", ch),
             span,
         },

@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "Type system for the Ivy programming language"
 
+[lints]
+workspace = true
+
 [dependencies]
 ivy-syntax = { path = "../ivy-syntax" }
 ivy-parse = { path = "../ivy-parse" }
