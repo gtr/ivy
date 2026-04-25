@@ -14,6 +14,26 @@ edition = "2021"
 license = "GPL-3.0"
 authors = ["Gerardo Torres Castro"]
 
+[workspace.lints.clippy]
+absolute_paths = "deny"
+or_fun_call = "deny"
+large_futures = "deny"
+cast_lossless = "warn"
+semicolon_if_nothing_returned = "warn"
+implicit_clone = "warn"
+inconsistent_struct_constructor = "warn"
+needless_pass_by_value = "warn"
+trivially_copy_pass_by_ref = "warn"
+manual_assert = "warn"
+cloned_instead_of_copied = "warn"
+redundant_closure_for_method_calls = "warn"
+manual_let_else = "warn"
+unnested_or_patterns = "warn"
+ref_option = "warn"
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
 [workspace.dependencies]
 ivy-syntax = { path = "ivy-syntax" }
 ivy-parse = { path = "ivy-parse" }

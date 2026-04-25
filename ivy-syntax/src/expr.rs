@@ -138,7 +138,6 @@ impl Param {
 /// Field initializer: name: expr
 #[derive(Debug, Clone)]
 pub struct FieldInit {
-    /// The field name.
     pub name: Ident,
     pub value: Spanned<Expr>,
     pub span: Span,

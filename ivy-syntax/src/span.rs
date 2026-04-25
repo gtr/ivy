@@ -1,3 +1,5 @@
+use std::ops::Deref;
+
 /// A byte offset in the source code
 pub type ByteOffset = usize;
 
@@ -47,7 +49,6 @@ impl Span {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spanned<T> {
     pub node: T,
-    /// The source location.
     pub span: Span,
 }
 
@@ -71,7 +72,7 @@ impl<T> Spanned<T> {
     }
 }
 
-impl<T> std::ops::Deref for Spanned<T> {
+impl<T> Deref for Spanned<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {

@@ -6,6 +6,9 @@ license.workspace = true
 authors.workspace = true
 description = "The Ivy programming language"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "ivy"
 path = "src/main.rs"

@@ -1,5 +1,7 @@
 //! Literal values.
 
+use std::fmt;
+
 /// Literal values in Ivy.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
@@ -17,8 +19,8 @@ pub enum Literal {
     Unit,
 }
 
-impl std::fmt::Display for Literal {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for Literal {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Literal::Int(n) => write!(f, "{}", n),
             Literal::Float(n) => write!(f, "{}", n),

@@ -348,7 +348,10 @@ impl TypeEnv {
     }
 
     pub fn free_vars(&self) -> HashSet<TypeVar> {
-        self.bindings.values().flat_map(|scheme| scheme.free_vars()).collect()
+        self.bindings
+            .values()
+            .flat_map(super::types::Scheme::free_vars)
+            .collect()
     }
 
     pub fn generalize(&self, ty: &Type) -> Scheme {

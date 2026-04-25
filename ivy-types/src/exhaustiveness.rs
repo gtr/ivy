@@ -4,6 +4,7 @@
 //! algorithm described in the  "Warnings for Pattern Matching" paper by Maranget (2007).
 //! http://moscova.inria.fr/~maranget/papers/warn/warn.pdf
 
+use ivy_syntax::lit::Literal;
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::Span;
 
@@ -130,7 +131,8 @@ fn covers_constructor(pattern: &Pattern, ctor_name: &str, _registry: &TypeRegist
         Pattern::Wildcard | Pattern::Var(_) => true,
         Pattern::Constructor { name, .. } => name.name == ctor_name,
         Pattern::Or { left, right } => {
-            covers_constructor(&left.node, ctor_name, _registry) || covers_constructor(&right.node, ctor_name, _registry)
+            covers_constructor(&left.node, ctor_name, _registry)
+                || covers_constructor(&right.node, ctor_name, _registry)
         }
         _ => false,
     }
@@ -142,8 +144,8 @@ fn find_missing_bool(patterns: &[&Pattern]) -> Vec<String> {
 
     for pattern in patterns {
         match pattern {
-            Pattern::Lit(ivy_syntax::lit::Literal::Bool(true)) => has_true = true,
-            Pattern::Lit(ivy_syntax::lit::Literal::Bool(false)) => has_false = true,
+            Pattern::Lit(Literal::Bool(true)) => has_true = true,
+            Pattern::Lit(Literal::Bool(false)) => has_false = true,
             Pattern::Or { left, right } => {
                 let left_missing = find_missing_bool(&[&left.node]);
                 let right_missing = find_missing_bool(&[&right.node]);
@@ -171,7 +173,7 @@ fn find_missing_bool(patterns: &[&Pattern]) -> Vec<String> {
 fn find_missing_unit(patterns: &[&Pattern]) -> Vec<String> {
     for pattern in patterns {
         match pattern {
-            Pattern::Lit(ivy_syntax::lit::Literal::Unit) => return vec![],
+            Pattern::Lit(Literal::Unit) => return vec![],
             Pattern::Tuple { elements } if elements.is_empty() => return vec![],
             Pattern::Or { left, right } => {
                 if find_missing_unit(&[&left.node]).is_empty() || find_missing_unit(&[&right.node]).is_empty() {
@@ -220,10 +222,9 @@ fn find_missing_list(patterns: &[&Pattern]) -> Vec<String> {
         match pattern {
             Pattern::List { elements } if elements.is_empty() => has_empty = true,
             Pattern::List { elements } if !elements.is_empty() => {
-                if elements.len() == 1
-                    && matches!(&elements[0].node, Pattern::Cons { .. }) {
-                        has_cons = true;
-                    }
+                if elements.len() == 1 && matches!(&elements[0].node, Pattern::Cons { .. }) {
+                    has_cons = true;
+                }
             }
             Pattern::Cons { .. } => has_cons = true,
             Pattern::Or { left, right } => {

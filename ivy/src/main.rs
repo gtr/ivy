@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
 use rustyline::error::ReadlineError;
@@ -274,13 +275,13 @@ fn check_file(path: &str, source: &str) {
                 }
                 Err(e) => {
                     print_type_error(e, source, path);
-                    std::process::exit(1);
+                    process::exit(1);
                 }
             }
         }
         Err(e) => {
             print_parse_error(e, source, path);
-            std::process::exit(1);
+            process::exit(1);
         }
     }
 }
@@ -290,7 +291,7 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("Error reading file '{}': {}", path, e);
-            std::process::exit(1);
+            process::exit(1);
         }
     };
 
@@ -328,20 +329,20 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
                             Ok(_) => {}
                             Err(e) => {
                                 print_eval_error(e, &source, path);
-                                std::process::exit(1);
+                                process::exit(1);
                             }
                         }
                     }
                     Err(e) => {
                         print_type_error(e, &source, path);
-                        std::process::exit(1);
+                        process::exit(1);
                     }
                 }
             }
         }
         Err(e) => {
             print_parse_error(e, &source, path);
-            std::process::exit(1);
+            process::exit(1);
         }
     }
 }
@@ -463,7 +464,7 @@ fn repl() {
         Ok(rl) => rl,
         Err(e) => {
             eprintln!("Failed to initialize REPL: {}", e);
-            std::process::exit(1);
+            process::exit(1);
         }
     };
 
@@ -685,7 +686,7 @@ fn main() {
             arg => {
                 eprintln!("Unknown option: {}", arg);
                 print_usage();
-                std::process::exit(1);
+                process::exit(1);
             }
         }
         i += 1;

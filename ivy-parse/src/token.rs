@@ -1,5 +1,7 @@
 //! Token types for the lexer.
 
+use std::fmt;
+
 use ivy_syntax::Span;
 
 /// A token with its kind, span, and lexeme.
@@ -209,8 +211,8 @@ impl TokenKind {
     }
 }
 
-impl std::fmt::Display for TokenKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let s = match self {
             TokenKind::Int => "integer",
             TokenKind::Float => "float",

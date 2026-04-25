@@ -1,4 +1,6 @@
 use std::collections::{HashMap, HashSet};
+use std::error::Error;
+use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
@@ -22,8 +24,8 @@ pub enum LoadError {
     CircularImport { chain: Vec<String> },
 }
 
-impl std::fmt::Display for LoadError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for LoadError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             LoadError::NotFound {
                 module_name,
@@ -48,7 +50,7 @@ impl std::fmt::Display for LoadError {
     }
 }
 
-impl std::error::Error for LoadError {}
+impl Error for LoadError {}
 
 /// A loaded module with its exports
 #[derive(Debug, Clone)]

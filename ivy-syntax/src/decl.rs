@@ -154,7 +154,6 @@ impl Variant {
 /// Record field: name: Type
 #[derive(Debug, Clone)]
 pub struct RecordField {
-    /// The field name.
     pub name: Ident,
     pub ty: Spanned<TypeExpr>,
     pub span: Span,

@@ -88,7 +88,7 @@ impl TypeRegistry {
     }
 
     pub fn get_constructors(&self, type_name: &str) -> Option<&[String]> {
-        self.constructors.get(type_name).map(|v| v.as_slice())
+        self.constructors.get(type_name).map(Vec::as_slice)
     }
 
     pub fn get_constructor_info(&self, ctor_name: &str) -> Option<&ConstructorInfo> {
@@ -100,7 +100,7 @@ impl TypeRegistry {
     }
 
     pub fn constructor_count(&self, type_name: &str) -> usize {
-        self.constructors.get(type_name).map(|v| v.len()).unwrap_or(0)
+        self.constructors.get(type_name).map(Vec::len).unwrap_or(0)
     }
 
     /// Register a record type with its fields.
@@ -116,7 +116,7 @@ impl TypeRegistry {
     }
 
     pub fn get_record_fields(&self, type_name: &str) -> Option<&[RecordFieldInfo]> {
-        self.records.get(type_name).map(|v| v.as_slice())
+        self.records.get(type_name).map(Vec::as_slice)
     }
 
     pub fn is_record_type(&self, type_name: &str) -> bool {

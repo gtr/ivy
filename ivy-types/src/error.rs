@@ -1,5 +1,6 @@
 use crate::types::{Type, TypeVar};
 use ivy_syntax::Span;
+use std::error::Error;
 use std::fmt;
 
 #[derive(Debug, Clone)]
@@ -296,7 +297,13 @@ impl fmt::Display for TypeError {
                 write!(f, "module not found: {}", module)
             }
             TypeErrorKind::CircularImport { module, cycle } => {
-                write!(f, "circular import detected: {} (cycle: {} -> {})", module, cycle.join(" -> "), module)
+                write!(
+                    f,
+                    "circular import detected: {} (cycle: {} -> {})",
+                    module,
+                    cycle.join(" -> "),
+                    module
+                )
             }
             TypeErrorKind::ModuleIOError { module, error } => {
                 write!(f, "error reading module {}: {}", module, error)
@@ -311,5 +318,5 @@ impl fmt::Display for TypeError {
     }
 }
 
-impl std::error::Error for TypeError {}
+impl Error for TypeError {}
 pub type TypeResult<T> = Result<T, TypeError>;
