@@ -1,5 +1,3 @@
-//! Type expression types.
-
 use crate::ast::Ident;
 use crate::span::Spanned;
 

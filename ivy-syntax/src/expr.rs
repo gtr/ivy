@@ -124,15 +124,6 @@ impl Param {
     pub fn new(pattern: Spanned<Pattern>, ty: Option<Spanned<TypeExpr>>, span: Span) -> Self {
         Self { pattern, ty, span }
     }
-
-    pub fn named(name: Ident) -> Self {
-        let span = name.span;
-        Self {
-            pattern: Spanned::new(Pattern::Var(name), span),
-            ty: None,
-            span,
-        }
-    }
 }
 
 /// Field initializer: name: expr

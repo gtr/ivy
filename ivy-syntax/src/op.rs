@@ -32,13 +32,13 @@ pub enum BinOp {
     Ge,
 
     // Logical
-    /// Logical and: &&
+    /// Logical and: and
     And,
-    /// Logical or: ||
+    /// Logical or: or
     Or,
 
     // List
-    /// Cons: ::
+    /// Cons: [x | xs]
     Cons,
     /// Concatenation: ++
     Concat,
@@ -58,9 +58,9 @@ impl fmt::Display for BinOp {
             BinOp::Le => "<=",
             BinOp::Gt => ">",
             BinOp::Ge => ">=",
-            BinOp::And => "&&",
-            BinOp::Or => "||",
-            BinOp::Cons => "::",
+            BinOp::And => "and",
+            BinOp::Or => "or",
+            BinOp::Cons => "|",
             BinOp::Concat => "++",
         };
         write!(f, "{}", s)

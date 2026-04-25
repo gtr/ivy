@@ -584,7 +584,6 @@ impl<'a> Parser<'a> {
         let is_mut = self.match_token(TokenKind::Mut).is_some();
 
         // Check for type signature syntax: `let name :: Type`
-        // We need to look ahead before parsing pattern, cuz pattern parser consumes ::
         if self.check(TokenKind::Ident) && self.check_ahead(1, TokenKind::ColonColon) {
             let name = self.parse_ident()?;
             self.expect(TokenKind::ColonColon)?;

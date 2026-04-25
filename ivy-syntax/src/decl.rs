@@ -144,14 +144,6 @@ impl Variant {
     pub fn new(name: Ident, fields: Vec<Spanned<TypeExpr>>, span: Span) -> Self {
         Self { name, fields, span }
     }
-
-    pub fn unit(name: Ident, span: Span) -> Self {
-        Self {
-            name,
-            fields: Vec::new(),
-            span,
-        }
-    }
 }
 
 /// Record field: name: Type

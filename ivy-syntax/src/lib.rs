@@ -1,8 +1,3 @@
-//! Ivy Syntax
-//!
-//! This crate defines the Abstract Syntax Tree (AST) types for the Ivy
-//! programming language. just pure data types
-
 pub mod ast;
 pub mod decl;
 pub mod expr;

@@ -55,14 +55,4 @@ impl FieldPattern {
     pub fn new(name: Ident, pattern: Option<Spanned<Pattern>>, span: Span) -> Self {
         Self { name, pattern, span }
     }
-
-    /// Create a simple field pattern that just binds the field name.
-    pub fn simple(name: Ident) -> Self {
-        let span = name.span;
-        Self {
-            name,
-            pattern: None,
-            span,
-        }
-    }
 }
