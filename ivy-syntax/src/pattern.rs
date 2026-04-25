@@ -55,13 +55,4 @@ impl FieldPattern {
     pub fn new(name: Ident, pattern: Option<Spanned<Pattern>>, span: Span) -> Self {
         Self { name, pattern, span }
     }
-
-    pub fn simple(name: Ident) -> Self {
-        let span = name.span;
-        Self {
-            name,
-            pattern: None,
-            span,
-        }
-    }
 }
