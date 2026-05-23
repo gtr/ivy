@@ -175,10 +175,10 @@ fn find_missing_unit(patterns: &[&Pattern]) -> Vec<String> {
         match pattern {
             Pattern::Lit(Literal::Unit) => return vec![],
             Pattern::Tuple { elements } if elements.is_empty() => return vec![],
-            Pattern::Or { left, right } => {
-                if find_missing_unit(&[&left.node]).is_empty() || find_missing_unit(&[&right.node]).is_empty() {
-                    return vec![];
-                }
+            Pattern::Or { left, right }
+                if find_missing_unit(&[&left.node]).is_empty() || find_missing_unit(&[&right.node]).is_empty() =>
+            {
+                return vec![];
             }
             _ => {}
         }
@@ -221,10 +221,8 @@ fn find_missing_list(patterns: &[&Pattern]) -> Vec<String> {
     for pattern in patterns {
         match pattern {
             Pattern::List { elements } if elements.is_empty() => has_empty = true,
-            Pattern::List { elements } if !elements.is_empty() => {
-                if elements.len() == 1 && matches!(&elements[0].node, Pattern::Cons { .. }) {
-                    has_cons = true;
-                }
+            Pattern::List { elements } if elements.len() == 1 && matches!(&elements[0].node, Pattern::Cons { .. }) => {
+                has_cons = true;
             }
             Pattern::Cons { .. } => has_cons = true,
             Pattern::Or { left, right } => {
