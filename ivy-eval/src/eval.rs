@@ -38,118 +38,6 @@ impl Interpreter {
     /// Create a new interpreter with builtins.
     pub fn new() -> Self {
         let env = Env::new();
-
-        // True builtins (user-facing, always available)
-        env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
-        env.define("println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
-        env.define("show", Value::Builtin(BUILTIN_SHOW.clone()), false);
-
-        // I/O intrinsics
-        env.define("__print", Value::Builtin(BUILTIN_PRINT.clone()), false);
-        env.define("__println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
-        env.define("__intToString", Value::Builtin(BUILTIN_INT_TO_STRING.clone()), false);
-        env.define("__readLine", Value::Builtin(BUILTIN_READ_LINE.clone()), false);
-        env.define("__readInt", Value::Builtin(BUILTIN_READ_INT.clone()), false);
-
-        // Conversion intrinsics (wrapped by lib/Convert.ivy)
-        env.define("__floatFromInt", Value::Builtin(BUILTIN_FLOAT_FROM_INT.clone()), false);
-        env.define("__floatToInt", Value::Builtin(BUILTIN_FLOAT_TO_INT.clone()), false);
-        env.define(
-            "__floatToString",
-            Value::Builtin(BUILTIN_FLOAT_TO_STRING.clone()),
-            false,
-        );
-        env.define("__stringToInt", Value::Builtin(BUILTIN_STRING_TO_INT.clone()), false);
-        env.define(
-            "__stringToFloat",
-            Value::Builtin(BUILTIN_STRING_TO_FLOAT.clone()),
-            false,
-        );
-        env.define(
-            "__tryStringToInt",
-            Value::Builtin(BUILTIN_TRY_STRING_TO_INT.clone()),
-            false,
-        );
-        env.define(
-            "__tryStringToFloat",
-            Value::Builtin(BUILTIN_TRY_STRING_TO_FLOAT.clone()),
-            false,
-        );
-
-        // Math intrinsics (wrapped by lib/Math.ivy)
-        env.define("__abs", Value::Builtin(BUILTIN_ABS.clone()), false);
-        env.define("__min", Value::Builtin(BUILTIN_MIN.clone()), false);
-        env.define("__max", Value::Builtin(BUILTIN_MAX.clone()), false);
-        env.define("__pow", Value::Builtin(BUILTIN_POW.clone()), false);
-        env.define("__sqrt", Value::Builtin(BUILTIN_SQRT.clone()), false);
-        env.define("__floor", Value::Builtin(BUILTIN_FLOOR.clone()), false);
-        env.define("__ceil", Value::Builtin(BUILTIN_CEIL.clone()), false);
-        env.define("__round", Value::Builtin(BUILTIN_ROUND.clone()), false);
-        env.define("__random", Value::Builtin(BUILTIN_RANDOM.clone()), false);
-
-        // String intrinsics (wrapped by lib/String.ivy)
-        env.define("__strLength", Value::Builtin(BUILTIN_STR_LENGTH.clone()), false);
-        env.define("__strTrim", Value::Builtin(BUILTIN_STR_TRIM.clone()), false);
-        env.define("__strContains", Value::Builtin(BUILTIN_STR_CONTAINS.clone()), false);
-        env.define("__strSubstring", Value::Builtin(BUILTIN_STR_SUBSTRING.clone()), false);
-        env.define("__strSplit", Value::Builtin(BUILTIN_STR_SPLIT.clone()), false);
-        env.define("__strToUpper", Value::Builtin(BUILTIN_STR_TO_UPPER.clone()), false);
-        env.define("__strToLower", Value::Builtin(BUILTIN_STR_TO_LOWER.clone()), false);
-        env.define(
-            "__strStartsWith",
-            Value::Builtin(BUILTIN_STR_STARTS_WITH.clone()),
-            false,
-        );
-        env.define("__strEndsWith", Value::Builtin(BUILTIN_STR_ENDS_WITH.clone()), false);
-        env.define("__strReplace", Value::Builtin(BUILTIN_STR_REPLACE.clone()), false);
-
-        // File I/O intrinsics (wrapped by lib/File.ivy)
-        env.define("__readFile", Value::Builtin(BUILTIN_READ_FILE.clone()), false);
-        env.define("__writeFile", Value::Builtin(BUILTIN_WRITE_FILE.clone()), false);
-        env.define("__appendFile", Value::Builtin(BUILTIN_APPEND_FILE.clone()), false);
-        env.define("__fileExists", Value::Builtin(BUILTIN_FILE_EXISTS.clone()), false);
-
-        env.define(
-            "None",
-            Value::Constructor {
-                type_name: "Option".to_string(),
-                variant: "None".to_string(),
-                fields: vec![],
-            },
-            false,
-        );
-        env.define(
-            "Some",
-            Value::Constructor {
-                type_name: "Option".to_string(),
-                variant: "Some".to_string(),
-                fields: vec![], // Will be populated when called
-            },
-            false,
-        );
-
-        env.define(
-            "Ok",
-            Value::Constructor {
-                type_name: "Result".to_string(),
-                variant: "Ok".to_string(),
-                fields: vec![],
-            },
-            false,
-        );
-        env.define(
-            "Err",
-            Value::Constructor {
-                type_name: "Result".to_string(),
-                variant: "Err".to_string(),
-                fields: vec![],
-            },
-            false,
-        );
-
-        env.define("true", Value::Bool(true), false);
-        env.define("false", Value::Bool(false), false);
-
         let mut search_paths = vec![];
 
         if let Ok(cwd) = env::current_dir() {
@@ -173,6 +61,7 @@ impl Interpreter {
             loaded_modules: HashSet::new(),
         };
 
+        interp.register_builtins();
         interp.load_prelude();
 
         interp
@@ -1285,19 +1174,31 @@ impl Interpreter {
             }
 
             Decl::Fn(fn_decl) => {
-                let closure = Closure {
-                    params: fn_decl.params.clone(),
-                    body: match &fn_decl.body {
-                        FnBody::Expr(e) => e.clone(),
-                        FnBody::Guards(_) => {
-                            return Ok(Value::Unit);
-                        }
-                    },
-                    env: self.env.fork(),
-                    name: Some(fn_decl.name.name.clone()),
-                };
-                self.env
-                    .define(&fn_decl.name.name, Value::Closure(Rc::new(closure)), false);
+                match &fn_decl.body {
+                    FnBody::Expr(e) => {
+                        let closure = Closure {
+                            params: fn_decl.params.clone(),
+                            body: e.clone(),
+                            env: self.env.fork(),
+                            name: Some(fn_decl.name.name.clone()),
+                        };
+                        self.env
+                            .define(&fn_decl.name.name, Value::Closure(Rc::new(closure)), false);
+                    }
+                    FnBody::Guards(_) => {
+                        let clause = FnClause {
+                            params: fn_decl.params.clone(),
+                            body: fn_decl.body.clone(),
+                        };
+                        let multi = MultiClauseFn {
+                            name: fn_decl.name.name.clone(),
+                            clauses: vec![clause],
+                            env: self.env.fork(),
+                        };
+                        self.env
+                            .define(&fn_decl.name.name, Value::MultiClause(Rc::new(multi)), false);
+                    }
+                }
                 Ok(Value::Unit)
             }
 

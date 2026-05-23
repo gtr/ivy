@@ -52,6 +52,7 @@ type Result<T, E> =
 -- =============================================================================
 
 -- Show: Convert a value to its string representation.
+trait Show<a> {
   fn show(x: a): String;
 }
 
