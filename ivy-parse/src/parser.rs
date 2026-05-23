@@ -117,7 +117,7 @@ impl<'a> Parser<'a> {
             TokenKind::Module => self.parse_module_decl()?,
             TokenKind::Import | TokenKind::From => self.parse_import_decl()?,
             TokenKind::Type => self.parse_type_decl(is_pub)?,
-            TokenKind::Trait => self.parse_trait_decl()?,
+            TokenKind::Trait => self.parse_trait_decl(is_pub)?,
             TokenKind::Impl => self.parse_impl_decl()?,
             TokenKind::Fn => self.parse_fn_decl(is_pub)?,
             TokenKind::Let => self.parse_let_decl(is_pub)?,
@@ -293,7 +293,7 @@ impl<'a> Parser<'a> {
         Ok(TypeBody::Record(fields))
     }
 
-    fn parse_trait_decl(&mut self) -> ParseResult<Decl> {
+    fn parse_trait_decl(&mut self, is_pub: bool) -> ParseResult<Decl> {
         self.expect(TokenKind::Trait)?;
         let name = self.parse_type_ident()?;
         self.expect(TokenKind::Lt)?;
@@ -309,7 +309,12 @@ impl<'a> Parser<'a> {
 
         self.expect(TokenKind::RBrace)?;
 
-        Ok(Decl::Trait { name, param, items })
+        Ok(Decl::Trait {
+            is_pub,
+            name,
+            param,
+            items,
+        })
     }
 
     /// Parse trait item.

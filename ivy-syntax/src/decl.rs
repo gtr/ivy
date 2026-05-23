@@ -35,6 +35,7 @@ pub enum Decl {
 
     /// Trait definition: `trait Show<a> { ... }`
     Trait {
+        is_pub: bool,
         name: Ident,
         param: Ident,
         items: Vec<TraitItem>,
