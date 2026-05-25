@@ -13,9 +13,10 @@ pub use error::{TypeError, TypeErrorKind, TypeResult};
 pub use infer::TypeChecker;
 use ivy_syntax::decl::{Decl, FnBody, FnDecl, ImportKind, TypeBody};
 use ivy_syntax::pattern::Pattern;
-use ivy_syntax::{Ident, Program, Spanned};
+use ivy_syntax::{collect_public_names, Ident, Program, Spanned};
+use ivy_utils::resolve_module_path;
 pub use registry::{TypeRegistry, VariantInfo};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 pub use subst::Subst;
@@ -196,32 +197,6 @@ fn handle_import_kind(env: &mut TypeEnv, module_name: &str, kind: &ImportKind) -
     }
 }
 
-/// Resolve a module path to a file path.
-fn resolve_module_path(module_path: &[String], search_paths: &[PathBuf]) -> Option<PathBuf> {
-    if module_path.is_empty() {
-        return None;
-    }
-    let lowercase_path: PathBuf = module_path
-        .iter()
-        .map(|s| s.to_lowercase())
-        .collect::<Vec<_>>()
-        .join("/")
-        .into();
-    let original_path: PathBuf = module_path.join("/").into();
-    for base in search_paths {
-        let path1 = base.join(&lowercase_path).with_extension("ivy");
-        if path1.exists() {
-            return Some(path1);
-        }
-        let path2 = base.join(&original_path).with_extension("ivy");
-        if path2.exists() {
-            return Some(path2);
-        }
-    }
-
-    None
-}
-
 /// Type check a function declaration.
 fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv) -> TypeResult<()> {
     let fn_name = &fn_decl.name.name;
@@ -306,33 +281,7 @@ pub fn type_check_module(
     checker: &mut TypeChecker,
     search_paths: &[PathBuf],
 ) -> TypeResult<HashMap<String, Scheme>> {
-    let mut public_names = HashSet::new();
-    for decl in &program.declarations {
-        match &decl.node {
-            Decl::Fn(fn_decl) if fn_decl.is_pub => {
-                public_names.insert(fn_decl.name.name.clone());
-            }
-            Decl::Let {
-                is_pub: true, pattern, ..
-            } => {
-                collect_pattern_names(&pattern.node, &mut public_names);
-            }
-            Decl::Type {
-                is_pub: true,
-                name,
-                body,
-                ..
-            } => {
-                public_names.insert(name.name.clone());
-                if let ivy_syntax::TypeBody::Sum(variants) = body {
-                    for variant in variants {
-                        public_names.insert(variant.name.name.clone());
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    let public_names = collect_public_names(&program.declarations);
     let mut module_env = TypeEnv::with_builtins();
     for decl in &program.declarations {
         check_decl(checker, decl, &mut module_env, search_paths)?;
@@ -345,39 +294,6 @@ pub fn type_check_module(
     }
 
     Ok(exports)
-}
-
-/// Collect variable names from a pattern.
-fn collect_pattern_names(pattern: &Pattern, names: &mut HashSet<String>) {
-    match pattern {
-        Pattern::Var(ident) => {
-            names.insert(ident.name.clone());
-        }
-        Pattern::Tuple { elements } => {
-            for pat in elements {
-                collect_pattern_names(&pat.node, names);
-            }
-        }
-        Pattern::List { elements } => {
-            for pat in elements {
-                collect_pattern_names(&pat.node, names);
-            }
-        }
-        Pattern::Cons { head, tail } => {
-            collect_pattern_names(&head.node, names);
-            collect_pattern_names(&tail.node, names);
-        }
-        Pattern::Record { fields, .. } => {
-            for field in fields {
-                if let Some(pat) = &field.pattern {
-                    collect_pattern_names(&pat.node, names);
-                } else {
-                    names.insert(field.name.name.clone());
-                }
-            }
-        }
-        _ => {}
-    }
 }
 
 /// Register type constructors from a type definition.

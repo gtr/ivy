@@ -10,5 +10,6 @@ description = "Type system for the Ivy programming language"
 workspace = true
 
 [dependencies]
+ivy-utils.workspace = true
 ivy-syntax.workspace = true
 ivy-parse.workspace = true

@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::ast::Ident;
 use crate::lit::Literal;
 use crate::span::{Span, Spanned};
@@ -54,5 +56,37 @@ impl FieldPattern {
     /// Create a new field pattern with explicit pattern.
     pub fn new(name: Ident, pattern: Option<Spanned<Pattern>>, span: Span) -> Self {
         Self { name, pattern, span }
+    }
+}
+
+/// Collect all variable names bound by a pattern.
+pub fn collect_pattern_names(pattern: &Pattern, names: &mut HashSet<String>) {
+    match pattern {
+        Pattern::Var(ident) => {
+            names.insert(ident.name.clone());
+        }
+        Pattern::Tuple { elements } | Pattern::List { elements } => {
+            for pat in elements {
+                collect_pattern_names(&pat.node, names);
+            }
+        }
+        Pattern::Cons { head, tail } => {
+            collect_pattern_names(&head.node, names);
+            collect_pattern_names(&tail.node, names);
+        }
+        Pattern::Record { fields, .. } => {
+            for field in fields {
+                if let Some(pat) = &field.pattern {
+                    collect_pattern_names(&pat.node, names);
+                } else {
+                    names.insert(field.name.name.clone());
+                }
+            }
+        }
+        Pattern::Or { left, right } => {
+            collect_pattern_names(&left.node, names);
+            collect_pattern_names(&right.node, names);
+        }
+        Pattern::Wildcard | Pattern::Lit(_) | Pattern::Constructor { .. } => {}
     }
 }

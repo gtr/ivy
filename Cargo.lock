@@ -173,6 +173,7 @@ dependencies = [
  "ivy-parse",
  "ivy-syntax",
  "ivy-types",
+ "ivy-utils",
  "miette",
  "rustyline",
  "thiserror",
@@ -184,6 +185,7 @@ version = "0.2.0"
 dependencies = [
  "ivy-parse",
  "ivy-syntax",
+ "ivy-utils",
  "miette",
  "rand",
  "thiserror",
@@ -211,7 +213,12 @@ version = "0.2.0"
 dependencies = [
  "ivy-parse",
  "ivy-syntax",
+ "ivy-utils",
 ]
+
+[[package]]
+name = "ivy-utils"
+version = "0.2.0"
 
 [[package]]
 name = "lazy_static"
