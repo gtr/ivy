@@ -38,21 +38,7 @@ impl Interpreter {
     /// Create a new interpreter with builtins.
     pub fn new() -> Self {
         let env = Env::new();
-        let mut search_paths = vec![];
-
-        if let Ok(cwd) = env::current_dir() {
-            search_paths.push(cwd.clone());
-            search_paths.push(cwd.join("lib"));
-        }
-
-        if let Ok(exe_path) = env::current_exe() {
-            if let Some(exe_dir) = exe_path.parent() {
-                search_paths.push(exe_dir.join("lib"));
-                if let Some(parent) = exe_dir.parent() {
-                    search_paths.push(parent.join("lib"));
-                }
-            }
-        }
+        let search_paths = ivy_utils::get_default_search_paths();
 
         let mut interp = Interpreter {
             env,
@@ -83,36 +69,6 @@ impl Interpreter {
             if path.exists() {
                 if let Ok(source) = fs::read_to_string(&path) {
                     if let Ok(program) = ivy_parse::parse(&source) {
-                        let mut public_names = HashSet::new();
-                        for decl in &program.declarations {
-                            match &decl.node {
-                                Decl::Fn(fn_decl) if fn_decl.is_pub => {
-                                    public_names.insert(fn_decl.name.name.clone());
-                                }
-                                Decl::Let {
-                                    is_pub: true, pattern, ..
-                                } => {
-                                    if let ivy_syntax::Pattern::Var(ident) = &pattern.node {
-                                        public_names.insert(ident.name.clone());
-                                    }
-                                }
-                                Decl::Type {
-                                    is_pub: true,
-                                    name,
-                                    body,
-                                    ..
-                                } => {
-                                    public_names.insert(name.name.clone());
-                                    if let ivy_syntax::TypeBody::Sum(variants) = body {
-                                        for variant in variants {
-                                            public_names.insert(variant.name.name.clone());
-                                        }
-                                    }
-                                }
-                                _ => {}
-                            }
-                        }
-
                         let grouped = self.collect_declarations(&program.declarations);
                         for decl in grouped {
                             let _ = self.eval_grouped_decl(&decl);

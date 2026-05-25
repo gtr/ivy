@@ -10,6 +10,7 @@ description = "Tree-walking interpreter for Ivy"
 workspace = true
 
 [dependencies]
+ivy-utils.workspace = true
 ivy-syntax.workspace = true
 ivy-parse.workspace = true
 thiserror.workspace = true

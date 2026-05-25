@@ -1,0 +1,12 @@
+[package]
+name = "ivy-utils"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Shared utilities for the Ivy programming language"
+
+[lints]
+workspace = true
+
+[dependencies]

@@ -14,6 +14,7 @@ name = "ivy"
 path = "src/main.rs"
 
 [dependencies]
+ivy-utils.workspace = true
 ivy-syntax.workspace = true
 ivy-parse.workspace = true
 ivy-types.workspace = true

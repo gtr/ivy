@@ -4,7 +4,7 @@
 
 use std::env;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
@@ -267,7 +267,7 @@ fn print_usage() {
 fn check_file(path: &str, source: &str) {
     match ivy_parse::parse(source) {
         Ok(program) => {
-            let mut search_paths = get_default_search_paths();
+            let mut search_paths = ivy_utils::get_default_search_paths();
             if let Some(parent) = Path::new(path).parent() {
                 if let Ok(abs_parent) = fs::canonicalize(parent) {
                     search_paths.insert(0, abs_parent);
@@ -313,7 +313,7 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
                 println!("{:#?}", program);
             } else {
                 // Build search paths for module resolution
-                let mut search_paths = get_default_search_paths();
+                let mut search_paths = ivy_utils::get_default_search_paths();
                 if let Some(parent) = Path::new(path).parent() {
                     if let Ok(abs_parent) = fs::canonicalize(parent) {
                         search_paths.insert(0, abs_parent);
@@ -442,26 +442,6 @@ fn load_prelude_types(type_checker: &mut ivy_types::TypeChecker, type_env: &mut 
             break;
         }
     }
-}
-/// Get default search paths for module resolution.
-fn get_default_search_paths() -> Vec<PathBuf> {
-    let mut paths = vec![];
-
-    if let Ok(cwd) = env::current_dir() {
-        paths.push(cwd.clone());
-        paths.push(cwd.join("lib"));
-    }
-
-    if let Ok(exe_path) = env::current_exe() {
-        if let Some(exe_dir) = exe_path.parent() {
-            paths.push(exe_dir.join("lib"));
-            if let Some(parent) = exe_dir.parent() {
-                paths.push(parent.join("lib"));
-            }
-        }
-    }
-
-    paths
 }
 
 fn repl() {
@@ -616,7 +596,7 @@ fn repl() {
                         continuation = false;
                         input_buffer.clear();
 
-                        let search_paths = get_default_search_paths();
+                        let search_paths = ivy_utils::get_default_search_paths();
 
                         match ivy_types::check_program_with_env(
                             &program,

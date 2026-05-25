@@ -8,10 +8,10 @@ pub mod span;
 pub mod types;
 
 pub use ast::{Ident, Program};
-pub use decl::{Decl, FnBody, FnDecl, GuardedExpr, RecordField, TypeBody, Variant};
+pub use decl::{collect_public_names, Decl, FnBody, FnDecl, GuardedExpr, RecordField, TypeBody, Variant};
 pub use expr::{Expr, FieldInit, MatchArm, Param};
 pub use lit::Literal;
 pub use op::{BinOp, UnaryOp};
-pub use pattern::{FieldPattern, Pattern};
+pub use pattern::{collect_pattern_names, FieldPattern, Pattern};
 pub use span::{Span, Spanned};
 pub use types::TypeExpr;

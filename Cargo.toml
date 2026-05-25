@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+  "ivy-utils",
   "ivy-syntax",
   "ivy-parse",
   "ivy-types",
@@ -35,6 +36,7 @@ ref_option = "warn"
 unsafe_op_in_unsafe_fn = "deny"
 
 [workspace.dependencies]
+ivy-utils = { path = "ivy-utils" }
 ivy-syntax = { path = "ivy-syntax" }
 ivy-parse = { path = "ivy-parse" }
 ivy-types = { path = "ivy-types" }

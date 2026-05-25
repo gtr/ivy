@@ -1,12 +1,10 @@
+use crate::value::Value;
+use ivy_syntax::{collect_public_names, Program};
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::PathBuf;
-
-use ivy_syntax::{Decl, Program};
-
-use crate::value::Value;
 
 /// Error types for module loading
 #[derive(Debug, Clone)]
@@ -81,65 +79,7 @@ impl Module {
 
     /// Collect public names from declarations
     pub fn collect_public_names(&mut self) {
-        for decl in &self.program.declarations {
-            match &decl.node {
-                Decl::Fn(fn_decl) if fn_decl.is_pub => {
-                    self.public_names.insert(fn_decl.name.name.clone());
-                }
-                Decl::Let {
-                    is_pub: true, pattern, ..
-                } => {
-                    collect_pattern_names(&pattern.node, &mut self.public_names);
-                }
-                Decl::Type {
-                    is_pub: true,
-                    name,
-                    body,
-                    ..
-                } => {
-                    self.public_names.insert(name.name.clone());
-                    if let ivy_syntax::TypeBody::Sum(variants) = body {
-                        for variant in variants {
-                            self.public_names.insert(variant.name.name.clone());
-                        }
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-}
-
-/// Collect variable names from a pattern
-fn collect_pattern_names(pattern: &ivy_syntax::Pattern, names: &mut HashSet<String>) {
-    match pattern {
-        ivy_syntax::Pattern::Var(ident) => {
-            names.insert(ident.name.clone());
-        }
-        ivy_syntax::Pattern::Tuple { elements } => {
-            for pat in elements {
-                collect_pattern_names(&pat.node, names);
-            }
-        }
-        ivy_syntax::Pattern::List { elements } => {
-            for pat in elements {
-                collect_pattern_names(&pat.node, names);
-            }
-        }
-        ivy_syntax::Pattern::Cons { head, tail } => {
-            collect_pattern_names(&head.node, names);
-            collect_pattern_names(&tail.node, names);
-        }
-        ivy_syntax::Pattern::Record { fields, .. } => {
-            for field in fields {
-                if let Some(pat) = &field.pattern {
-                    collect_pattern_names(&pat.node, names);
-                } else {
-                    names.insert(field.name.name.clone());
-                }
-            }
-        }
-        _ => {}
+        self.public_names = collect_public_names(&self.program.declarations);
     }
 }
 
@@ -177,32 +117,7 @@ impl ModuleLoader {
 
     /// Resolve a module path to a file path
     pub fn resolve_path(&self, module_path: &[String]) -> Option<PathBuf> {
-        if module_path.is_empty() {
-            return None;
-        }
-
-        let lowercase_path: PathBuf = module_path
-            .iter()
-            .map(|s| s.to_lowercase())
-            .collect::<Vec<_>>()
-            .join("/")
-            .into();
-
-        let original_path: PathBuf = module_path.join("/").into();
-
-        // TODO(gtr): decide case-sensitivity
-        for base in &self.search_paths {
-            let path1 = base.join(&lowercase_path).with_extension("ivy");
-            if path1.exists() {
-                return Some(path1);
-            }
-            let path2 = base.join(&original_path).with_extension("ivy");
-            if path2.exists() {
-                return Some(path2);
-            }
-        }
-
-        None
+        ivy_utils::resolve_module_path(module_path, &self.search_paths)
     }
 
     /// Get all searched paths for error messages

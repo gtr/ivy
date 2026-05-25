@@ -1,6 +1,8 @@
+use std::collections::HashSet;
+
 use crate::ast::Ident;
 use crate::expr::{Expr, Param};
-use crate::pattern::Pattern;
+use crate::pattern::{collect_pattern_names, Pattern};
 use crate::span::{Span, Spanned};
 use crate::types::TypeExpr;
 
@@ -189,4 +191,36 @@ impl Constraint {
             span,
         }
     }
+}
+
+/// Collect all public declaration names from a list of declarations.
+pub fn collect_public_names(decls: &[Spanned<Decl>]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    for decl in decls {
+        match &decl.node {
+            Decl::Fn(fn_decl) if fn_decl.is_pub => {
+                names.insert(fn_decl.name.name.clone());
+            }
+            Decl::Let {
+                is_pub: true, pattern, ..
+            } => {
+                collect_pattern_names(&pattern.node, &mut names);
+            }
+            Decl::Type {
+                is_pub: true,
+                name,
+                body,
+                ..
+            } => {
+                names.insert(name.name.clone());
+                if let TypeBody::Sum(variants) = body {
+                    for variant in variants {
+                        names.insert(variant.name.name.clone());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    names
 }
