@@ -6,6 +6,7 @@ mod builtins;
 mod env;
 mod error;
 mod eval;
+mod eval_ops;
 mod loader;
 mod pattern;
 #[cfg(test)]
