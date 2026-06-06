@@ -196,6 +196,7 @@ name = "ivy-parse"
 version = "0.2.0"
 dependencies = [
  "ivy-syntax",
+ "ivy-utils",
  "miette",
  "thiserror",
 ]
@@ -213,7 +214,6 @@ version = "0.2.0"
 dependencies = [
  "ivy-parse",
  "ivy-syntax",
- "ivy-utils",
 ]
 
 [[package]]

@@ -1,10 +1,10 @@
 //! Main evaluator for Ivy.
 
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
 use std::rc::Rc;
 use std::{env, fs, mem};
 
+use ivy_parse::ModuleLoader;
 use ivy_syntax::decl::ImportKind;
 use ivy_syntax::{Decl, Expr, FnBody, Program, Span, Spanned, TypeBody};
 
@@ -12,7 +12,6 @@ use crate::builtins::*;
 use crate::env::Env;
 use crate::error::{EvalError, EvalResult};
 use crate::eval_ops::literal_to_value;
-use crate::loader::ModuleLoader;
 use crate::pattern::match_pattern;
 use crate::value::{vec_to_list, Closure, FnClause, MultiClauseFn, Value};
 
@@ -20,8 +19,6 @@ use crate::value::{vec_to_list, Closure, FnClause, MultiClauseFn, Value};
 pub struct Interpreter {
     /// Global environment.
     pub(crate) env: Env,
-    /// Module loader for imports.
-    loader: ModuleLoader,
     /// Loaded module namespaces: module_name -> (name -> value).
     pub(crate) modules: HashMap<String, HashMap<String, Value>>,
     /// Modules currently being loaded (for cycle detection).
@@ -35,26 +32,10 @@ impl Default for Interpreter {
 }
 
 impl Interpreter {
-    /// Create a new interpreter with builtins.
+    /// Create a new interpreter with builtins and prelude (for tests and standalone usage).
     pub fn new() -> Self {
-        let env = Env::new();
-        let search_paths = ivy_utils::get_default_search_paths();
+        let mut interp = Self::with_builtins();
 
-        let mut interp = Interpreter {
-            env,
-            loader: ModuleLoader::new(search_paths),
-            modules: HashMap::new(),
-            loaded_modules: HashSet::new(),
-        };
-
-        interp.register_builtins();
-        interp.load_prelude();
-
-        interp
-    }
-
-    /// Try to load the prelude file.
-    fn load_prelude(&mut self) {
         let prelude_paths = [
             env::current_dir().ok().map(|d| d.join("lib/prelude.ivy")),
             env::current_exe()
@@ -69,25 +50,34 @@ impl Interpreter {
             if path.exists() {
                 if let Ok(source) = fs::read_to_string(&path) {
                     if let Ok(program) = ivy_parse::parse(&source) {
-                        let grouped = self.collect_declarations(&program.declarations);
-                        for decl in grouped {
-                            let _ = self.eval_grouped_decl(&decl);
-                        }
+                        interp.load_program(&program);
                     }
                 }
                 break;
             }
         }
+
+        interp
     }
 
-    /// Add a search path for module resolution.
-    pub fn add_search_path(&mut self, path: PathBuf) {
-        self.loader.add_search_path(path);
+    /// Create an interpreter with builtins but no prelude.
+    pub fn with_builtins() -> Self {
+        let env = Env::new();
+        let interp = Interpreter {
+            env,
+            modules: HashMap::new(),
+            loaded_modules: HashSet::new(),
+        };
+        interp.register_builtins();
+        interp
     }
 
-    /// Get the search paths used for module resolution.
-    pub fn search_paths(&self) -> &[PathBuf] {
-        self.loader.search_paths()
+    /// Load a program's declarations into the interpreter (for prelude loading).
+    pub fn load_program(&mut self, program: &Program) {
+        let grouped = self.collect_declarations(&program.declarations);
+        for decl in grouped {
+            let _ = self.eval_grouped_decl(&decl);
+        }
     }
 
     /// Get a loaded module by name, if it exists.
@@ -151,10 +141,17 @@ impl Interpreter {
             .collect()
     }
 
+    /// Evaluate a program with a default loader (for tests and simple usage).
     pub fn eval_program(&mut self, program: &Program) -> EvalResult<Value> {
+        let mut loader = ModuleLoader::new(ivy_utils::get_default_search_paths());
+        self.eval_program_with_loader(program, &mut loader)
+    }
+
+    /// Evaluate a program with a shared module loader.
+    pub fn eval_program_with_loader(&mut self, program: &Program, loader: &mut ModuleLoader) -> EvalResult<Value> {
         for decl in &program.declarations {
             if let Decl::Import { path, kind } = &decl.node {
-                self.process_import(path, kind, decl.span)?;
+                self.process_import(path, kind, decl.span, loader)?;
             }
         }
         let grouped = self.collect_declarations(&program.declarations);
@@ -166,7 +163,13 @@ impl Interpreter {
     }
 
     /// Process an import declaration.
-    fn process_import(&mut self, path: &[ivy_syntax::Ident], kind: &ImportKind, span: Span) -> EvalResult<()> {
+    fn process_import(
+        &mut self,
+        path: &[ivy_syntax::Ident],
+        kind: &ImportKind,
+        span: Span,
+        loader: &mut ModuleLoader,
+    ) -> EvalResult<()> {
         if path.is_empty() {
             return Ok(());
         }
@@ -187,39 +190,44 @@ impl Interpreter {
         if !self.modules.contains_key(&module_name) {
             self.loaded_modules.insert(module_name.clone());
 
-            let result = self.loader.load(&path_strings);
-            match result {
-                Ok(module) => {
-                    let program = module.program.clone();
-                    let public_names = module.public_names.clone();
+            let parsed = loader.load(&path_strings).map_err(|e| EvalError::ModuleError {
+                message: e.to_string(),
+                span,
+            })?;
 
-                    let saved_env = mem::take(&mut self.env);
+            let program = parsed.program.clone();
+            let public_names = parsed.public_names.clone();
 
-                    self.register_builtins();
-                    let grouped = self.collect_declarations(&program.declarations);
-                    for decl in grouped {
-                        let _ = self.eval_grouped_decl(&decl);
-                    }
+            let saved_env = mem::take(&mut self.env);
 
-                    let mut exports = HashMap::new();
-                    for name in &public_names {
-                        if let Some(value) = self.env.get(name) {
-                            exports.insert(name.clone(), value);
-                        }
-                    }
+            self.register_builtins();
 
-                    self.env = saved_env;
-                    self.modules.insert(module_name.clone(), exports);
-                    self.loaded_modules.remove(&module_name);
-                }
-                Err(e) => {
-                    self.loaded_modules.remove(&module_name);
-                    return Err(EvalError::ModuleError {
-                        message: e.to_string(),
-                        span,
-                    });
+            // Process nested imports
+            for decl in &program.declarations {
+                if let Decl::Import {
+                    path: imp_path,
+                    kind: imp_kind,
+                } = &decl.node
+                {
+                    self.process_import(imp_path, imp_kind, decl.span, loader)?;
                 }
             }
+
+            let grouped = self.collect_declarations(&program.declarations);
+            for decl in grouped {
+                let _ = self.eval_grouped_decl(&decl);
+            }
+
+            let mut exports = HashMap::new();
+            for name in &public_names {
+                if let Some(value) = self.env.get(name) {
+                    exports.insert(name.clone(), value);
+                }
+            }
+
+            self.env = saved_env;
+            self.modules.insert(module_name.clone(), exports);
+            self.loaded_modules.remove(&module_name);
         }
 
         if let Some(module_exports) = self.modules.get(&module_name).cloned() {

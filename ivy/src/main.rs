@@ -4,7 +4,7 @@
 
 use std::env;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process;
 
 use miette::{Diagnostic, NamedSource, SourceSpan};
@@ -267,16 +267,12 @@ fn print_usage() {
 fn check_file(path: &str, source: &str) {
     match ivy_parse::parse(source) {
         Ok(program) => {
-            let mut search_paths = ivy_utils::get_default_search_paths();
-            if let Some(parent) = Path::new(path).parent() {
-                if let Ok(abs_parent) = fs::canonicalize(parent) {
-                    search_paths.insert(0, abs_parent);
-                }
-            }
+            let search_paths = build_search_paths(path);
+            let mut loader = ivy_parse::ModuleLoader::new(search_paths);
             let mut type_checker = ivy_types::TypeChecker::new();
             let mut type_env = ivy_types::TypeEnv::with_builtins();
 
-            match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &search_paths) {
+            match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
                 Ok(()) => {
                     println!("{}OK{}: {} type checks successfully", GREEN, RESET, path);
                 }
@@ -312,27 +308,16 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
             if show_tree {
                 println!("{:#?}", program);
             } else {
-                // Build search paths for module resolution
-                let mut search_paths = ivy_utils::get_default_search_paths();
-                if let Some(parent) = Path::new(path).parent() {
-                    if let Ok(abs_parent) = fs::canonicalize(parent) {
-                        search_paths.insert(0, abs_parent);
-                    }
-                }
-
-                // Type check with import support
+                let search_paths = build_search_paths(path);
+                let mut loader = ivy_parse::ModuleLoader::new(search_paths);
                 let mut type_checker = ivy_types::TypeChecker::new();
                 let mut type_env = ivy_types::TypeEnv::with_builtins();
 
-                match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &search_paths) {
+                match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
                     Ok(()) => {
                         let mut interp = Interpreter::new();
 
-                        for search_path in &search_paths {
-                            interp.add_search_path(search_path.clone());
-                        }
-
-                        match interp.eval_program(&program) {
+                        match interp.eval_program_with_loader(&program, &mut loader) {
                             Ok(_) => {}
                             Err(e) => {
                                 print_eval_error(e, &source, path);
@@ -421,8 +406,24 @@ fn print_greeting() {
     );
 }
 
-/// Load prelude types into the type environment.
-fn load_prelude_types(type_checker: &mut ivy_types::TypeChecker, type_env: &mut ivy_types::TypeEnv) {
+/// Build search paths for a file, prepending its parent directory.
+fn build_search_paths(path: &str) -> Vec<PathBuf> {
+    let mut search_paths = ivy_utils::get_default_search_paths();
+    if let Some(parent) = Path::new(path).parent() {
+        if let Ok(abs_parent) = fs::canonicalize(parent) {
+            search_paths.insert(0, abs_parent);
+        }
+    }
+    search_paths
+}
+
+/// Load the prelude into both the type checker and evaluator (parsed once).
+fn load_prelude(
+    interp: &mut Interpreter,
+    type_checker: &mut ivy_types::TypeChecker,
+    type_env: &mut ivy_types::TypeEnv,
+    loader: &mut ivy_parse::ModuleLoader,
+) {
     let prelude_paths = [
         env::current_dir().ok().map(|d| d.join(PRELUDE_FILE)),
         env::current_exe()
@@ -436,7 +437,8 @@ fn load_prelude_types(type_checker: &mut ivy_types::TypeChecker, type_env: &mut 
         if path.exists() {
             if let Ok(source) = fs::read_to_string(&path) {
                 if let Ok(program) = ivy_parse::parse(&source) {
-                    let _ = ivy_types::check_program_with_env(&program, type_checker, type_env, &[]);
+                    let _ = ivy_types::check_program_with_env(&program, type_checker, type_env, loader);
+                    interp.load_program(&program);
                 }
             }
             break;
@@ -455,10 +457,11 @@ fn repl() {
         }
     };
 
-    let mut interp = Interpreter::new();
+    let mut interp = Interpreter::with_builtins();
+    let mut loader = ivy_parse::ModuleLoader::new(ivy_utils::get_default_search_paths());
     let mut type_checker = ivy_types::TypeChecker::new();
     let mut type_env = ivy_types::TypeEnv::with_builtins();
-    load_prelude_types(&mut type_checker, &mut type_env);
+    load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
 
     let mut input_buffer = String::new();
     let mut continuation = false;
@@ -497,10 +500,11 @@ fn repl() {
                         }
 
                         ":r" | ":reset" => {
-                            interp = Interpreter::new();
+                            interp = Interpreter::with_builtins();
+                            loader = ivy_parse::ModuleLoader::new(ivy_utils::get_default_search_paths());
                             type_checker = ivy_types::TypeChecker::new();
                             type_env = ivy_types::TypeEnv::with_builtins();
-                            load_prelude_types(&mut type_checker, &mut type_env);
+                            load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
                             println!("Interpreter state reset.");
                         }
 
@@ -596,15 +600,9 @@ fn repl() {
                         continuation = false;
                         input_buffer.clear();
 
-                        let search_paths = ivy_utils::get_default_search_paths();
-
-                        match ivy_types::check_program_with_env(
-                            &program,
-                            &mut type_checker,
-                            &mut type_env,
-                            &search_paths,
-                        ) {
-                            Ok(()) => match interp.eval_program(&program) {
+                        match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader)
+                        {
+                            Ok(()) => match interp.eval_program_with_loader(&program, &mut loader) {
                                 Ok(value) => {
                                     if !matches!(value, Value::Unit) {
                                         println!("{:?}", value);

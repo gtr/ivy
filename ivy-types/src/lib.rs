@@ -11,25 +11,24 @@ pub mod unify;
 pub use env::{TypeEnv, TypeVarGen};
 pub use error::{TypeError, TypeErrorKind, TypeResult};
 pub use infer::TypeChecker;
+use ivy_parse::ModuleLoader;
 use ivy_syntax::decl::{Decl, FnBody, FnDecl, ImportKind, TypeBody};
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::{collect_public_names, Ident, Program, Spanned};
-use ivy_utils::resolve_module_path;
 pub use registry::{TypeRegistry, VariantInfo};
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
 pub use subst::Subst;
 pub use types::{Scheme, Type, TypeVar};
 pub use unify::unify;
 
-/// Type check an entire program (without import support,use check_program_with_paths for imports).
+/// Type check an entire program (without import support, use check_program_with_env for imports).
 pub fn check_program(program: &Program) -> TypeResult<()> {
     let mut env = TypeEnv::with_builtins();
     let mut checker = TypeChecker::new();
+    let mut loader = ModuleLoader::new(vec![]);
 
     for decl in &program.declarations {
-        check_decl(&mut checker, decl, &mut env, &[])?;
+        check_decl(&mut checker, decl, &mut env, &mut loader)?;
     }
 
     Ok(())
@@ -40,10 +39,10 @@ pub fn check_program_with_env(
     program: &Program,
     checker: &mut TypeChecker,
     env: &mut TypeEnv,
-    search_paths: &[PathBuf],
+    loader: &mut ModuleLoader,
 ) -> TypeResult<()> {
     for decl in &program.declarations {
-        check_decl(checker, decl, env, search_paths)?;
+        check_decl(checker, decl, env, loader)?;
     }
     Ok(())
 }
@@ -53,7 +52,7 @@ fn check_decl(
     checker: &mut TypeChecker,
     decl: &Spanned<Decl>,
     env: &mut TypeEnv,
-    search_paths: &[PathBuf],
+    loader: &mut ModuleLoader,
 ) -> TypeResult<()> {
     match &decl.node {
         Decl::TypeSig { name, ty, .. } => {
@@ -93,7 +92,7 @@ fn check_decl(
             register_type_constructors(name, params, body, env, checker);
             Ok(())
         }
-        Decl::Import { path, kind } => check_import(checker, env, search_paths, path, kind),
+        Decl::Import { path, kind } => check_import(checker, env, loader, path, kind),
         // TODO(gtr): modules, traits, impl, etc.
         _ => Ok(()),
     }
@@ -103,7 +102,7 @@ fn check_decl(
 fn check_import(
     checker: &mut TypeChecker,
     env: &mut TypeEnv,
-    search_paths: &[PathBuf],
+    loader: &mut ModuleLoader,
     path: &[Ident],
     kind: &ImportKind,
 ) -> TypeResult<()> {
@@ -115,9 +114,8 @@ fn check_import(
     let path_strings: Vec<String> = path.iter().map(|id| id.name.clone()).collect();
     let module_name = path_strings.join(".");
 
-    // Check if module already loaded
+    // Check if module already type-checked
     if env.get_module(&module_name).is_some() {
-        // Module already loaded, just handle the import kind
         return handle_import_kind(env, &module_name, kind);
     }
 
@@ -127,27 +125,24 @@ fn check_import(
         return Err(TypeError::circular_import(&module_name, cycle, span));
     }
 
-    // Mark module as being loaded
+    // Load and parse via shared loader
+    let parsed = loader.load(&path_strings).map_err(|e| match &e {
+        ivy_parse::ModuleLoadError::NotFound { .. } => TypeError::module_not_found(&module_name, span),
+        ivy_parse::ModuleLoadError::IoError { message, .. } => TypeError::module_io_error(&module_name, message, span),
+        ivy_parse::ModuleLoadError::ParseError { message, .. } => {
+            TypeError::module_parse_error(&module_name, message, span)
+        }
+    })?;
+
+    // Clone what we need before mutating checker/env
+    let module_program = parsed.program.clone();
+    let source = parsed.source.clone();
+    let file_path = parsed.path.clone();
+
+    // Mark as loading
     checker.loaded_modules.insert(module_name.clone());
 
-    // Load and type check the module
-    let Some(file_path) = resolve_module_path(&path_strings, search_paths) else {
-        checker.loaded_modules.remove(&module_name);
-        return Err(TypeError::module_not_found(&module_name, span));
-    };
-    let Ok(source) = fs::read_to_string(&file_path) else {
-        checker.loaded_modules.remove(&module_name);
-        return Err(TypeError::module_io_error(&module_name, "failed to read file", span));
-    };
-    let module_program = match ivy_parse::parse(&source) {
-        Ok(p) => p,
-        Err(e) => {
-            checker.loaded_modules.remove(&module_name);
-            return Err(TypeError::module_parse_error(&module_name, &e.to_string(), span));
-        }
-    };
-
-    let exports = match type_check_module(&module_program, checker, search_paths) {
+    let exports = match type_check_module(&module_program, checker, loader) {
         Ok(e) => e,
         Err(e) => {
             checker.loaded_modules.remove(&module_name);
@@ -156,7 +151,6 @@ fn check_import(
         }
     };
 
-    // Done loading this module
     checker.loaded_modules.remove(&module_name);
     env.insert_module(module_name.clone(), exports);
 
@@ -279,12 +273,12 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
 pub fn type_check_module(
     program: &Program,
     checker: &mut TypeChecker,
-    search_paths: &[PathBuf],
+    loader: &mut ModuleLoader,
 ) -> TypeResult<HashMap<String, Scheme>> {
     let public_names = collect_public_names(&program.declarations);
     let mut module_env = TypeEnv::with_builtins();
     for decl in &program.declarations {
-        check_decl(checker, decl, &mut module_env, search_paths)?;
+        check_decl(checker, decl, &mut module_env, loader)?;
     }
     let mut exports = HashMap::new();
     for name in public_names {
