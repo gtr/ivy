@@ -460,19 +460,19 @@ mod interpreter_tests {
 
 #[cfg(test)]
 mod loader_tests {
-    use crate::loader::ModuleLoader;
+    use ivy_parse::ModuleLoader;
     use std::path::PathBuf;
 
     #[test]
-    fn test_resolve_path_not_found() {
-        let loader = ModuleLoader::new(vec![PathBuf::from("/nonexistent")]);
-        assert!(loader.resolve_path(&["Math".to_string()]).is_none());
+    fn test_load_not_found() {
+        let mut loader = ModuleLoader::new(vec![PathBuf::from("/nonexistent")]);
+        assert!(loader.load(&["Math".to_string()]).is_err());
     }
 
     #[test]
     fn test_empty_search_paths() {
-        let loader = ModuleLoader::new(vec![]);
-        assert!(loader.resolve_path(&["Anything".to_string()]).is_none());
+        let mut loader = ModuleLoader::new(vec![]);
+        assert!(loader.load(&["Anything".to_string()]).is_err());
     }
 
     #[test]
@@ -482,8 +482,8 @@ mod loader_tests {
     }
 
     #[test]
-    fn test_is_loaded() {
+    fn test_get_unloaded() {
         let loader = ModuleLoader::new(vec![]);
-        assert!(!loader.is_loaded("NonexistentModule"));
+        assert!(loader.get("NonexistentModule").is_none());
     }
 }
