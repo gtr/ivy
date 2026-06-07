@@ -3,11 +3,12 @@
 //! evaluate, loop) to be fair. Also contains logic for errors and REPL commands.
 
 use std::env;
+use std::error::Error as StdError;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use miette::{Diagnostic, NamedSource, SourceSpan};
+use miette::{Diagnostic, NamedSource};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use thiserror::Error;
@@ -22,235 +23,51 @@ const RESET: &str = "\x1b[0m";
 
 const PRELUDE_FILE: &str = "lib/prelude.ivy";
 
-/// Wrapper for ParseError that includes source code for miette pretty printing.
+/// Wraps any `Diagnostic` error with the source code so miette can render
+/// labels against it. The inner error provides its own `#[label]` attributes.
 #[derive(Error, Debug, Diagnostic)]
 #[error("{inner}")]
-struct SourcedParseError {
+struct SourcedError<E: StdError + Diagnostic + 'static> {
     #[source_code]
     src: NamedSource<String>,
-    #[label("{}", label_text)]
-    span: SourceSpan,
-    label_text: String,
-    inner: ParseError,
+    #[diagnostic_source]
+    #[source]
+    inner: E,
 }
 
-impl SourcedParseError {
-    fn new(error: ParseError, source: &str, filename: &str) -> Self {
-        let (span, label_text) = match &error {
-            ParseError::UnexpectedToken { span, found, .. } => (
-                (span.start, span.end - span.start).into(),
-                format!("found {} here", found),
-            ),
-            ParseError::UnexpectedEof { span, expected, .. } => (
-                (span.start, span.end.saturating_sub(span.start).max(1)).into(),
-                format!("expected {}", expected),
-            ),
-            ParseError::Unterminated { start, .. } => (
-                (start.start, start.end - start.start).into(),
-                "started here".to_string(),
-            ),
-            ParseError::InvalidEscape { span, .. } => {
-                ((span.start, span.end - span.start).into(), "invalid escape".to_string())
-            }
-            ParseError::InvalidNumber { span } => {
-                ((span.start, span.end - span.start).into(), "invalid number".to_string())
-            }
-            ParseError::InvalidChar { span } => (
-                (span.start, span.end - span.start).into(),
-                "invalid character".to_string(),
-            ),
-            ParseError::UnexpectedChar { span, .. } => (
-                (span.start, span.end - span.start).into(),
-                "unexpected character".to_string(),
-            ),
-            ParseError::InvalidPattern { span } => (
-                (span.start, span.end - span.start).into(),
-                "not a valid pattern".to_string(),
-            ),
-        };
+impl<E: StdError + Diagnostic + 'static> SourcedError<E> {
+    fn new(error: E, source: &str, filename: &str) -> Self {
         Self {
             src: NamedSource::new(filename, source.to_string()),
-            span,
-            label_text,
-            inner: error,
-        }
-    }
-}
-
-/// Wrapper for EvalError that includes source code for pretty printing.
-#[derive(Error, Debug, Diagnostic)]
-#[error("{inner}")]
-struct SourcedEvalError {
-    #[source_code]
-    src: NamedSource<String>,
-    #[label("{}", label_text)]
-    span: SourceSpan,
-    label_text: String,
-    inner: EvalError,
-}
-
-impl SourcedEvalError {
-    fn new(error: EvalError, source: &str, filename: &str) -> Self {
-        let (span, label_text) = match &error {
-            EvalError::UndefinedVariable { span, .. } => (
-                (span.start, span.end - span.start).into(),
-                "not found in scope".to_string(),
-            ),
-            EvalError::ImmutableAssignment { span, .. } => (
-                (span.start, span.end - span.start).into(),
-                "binding is immutable".to_string(),
-            ),
-            EvalError::TypeError { span, expected, .. } => (
-                (span.start, span.end - span.start).into(),
-                format!("expected {}", expected),
-            ),
-            EvalError::MatchFailed { span } => (
-                (span.start, span.end - span.start).into(),
-                "no pattern matched".to_string(),
-            ),
-            EvalError::ArityMismatch { span, expected, got } => (
-                (span.start, span.end - span.start).into(),
-                format!("expected {} args, got {}", expected, got),
-            ),
-            EvalError::NotCallable { span, .. } => (
-                (span.start, span.end - span.start).into(),
-                "cannot call this value".to_string(),
-            ),
-            EvalError::DivisionByZero { span } => (
-                (span.start, span.end - span.start).into(),
-                "division by zero".to_string(),
-            ),
-            EvalError::IndexOutOfBounds { span, index, length } => (
-                (span.start, span.end - span.start).into(),
-                format!("index {} out of bounds (len {})", index, length),
-            ),
-            EvalError::UnknownField { span, field, .. } => (
-                (span.start, span.end - span.start).into(),
-                format!("field '{}' not found", field),
-            ),
-            EvalError::UnknownConstructor { span, .. } => (
-                (span.start, span.end - span.start).into(),
-                "constructor not defined".to_string(),
-            ),
-            EvalError::ModuleError { span, .. } => {
-                ((span.start, span.end - span.start).into(), "module error".to_string())
-            }
-            EvalError::CircularImport { span, cycle, .. } => (
-                (span.start, span.end - span.start).into(),
-                format!("cycle: {}", cycle.join(" -> ")),
-            ),
-            EvalError::PrivateItem { span, .. } => {
-                ((span.start, span.end - span.start).into(), "not accessible".to_string())
-            }
-            EvalError::UndefinedModule { span, .. } => (
-                (span.start, span.end - span.start).into(),
-                "module not found".to_string(),
-            ),
-            EvalError::ValueError { span, message } => ((span.start, span.end - span.start).into(), message.clone()),
-        };
-        Self {
-            src: NamedSource::new(filename, source.to_string()),
-            span,
-            label_text,
-            inner: error,
-        }
-    }
-}
-
-/// Wrapper for TypeError that includes source code for pretty printing.
-#[derive(Error, Debug, Diagnostic)]
-#[error("{inner}")]
-struct SourcedTypeError {
-    #[source_code]
-    src: NamedSource<String>,
-    #[label("{}", label_text)]
-    span: SourceSpan,
-    label_text: String,
-    inner: TypeError,
-}
-
-impl SourcedTypeError {
-    fn new(error: TypeError, source: &str, filename: &str) -> Self {
-        use ivy_types::TypeErrorKind;
-
-        if let TypeErrorKind::ModuleTypeError {
-            file_path,
-            source: module_source,
-            inner,
-            ..
-        } = &error.kind
-        {
-            return Self::new(*inner.clone(), module_source, file_path);
-        }
-
-        let span_range = error.span;
-        let label_text = match &error.kind {
-            TypeErrorKind::Mismatch { expected, found } => {
-                format!("expected {}, found {}", expected, found)
-            }
-            TypeErrorKind::InfiniteType { .. } => "infinite type".to_string(),
-            TypeErrorKind::UndefinedVariable { name } => format!("'{}' not found", name),
-            TypeErrorKind::UndefinedType { name } => format!("type '{}' not found", name),
-            TypeErrorKind::UndefinedConstructor { name } => {
-                format!("constructor '{}' not found", name)
-            }
-            TypeErrorKind::ArityMismatch { expected, found, .. } => {
-                format!("expected {} args, got {}", expected, found)
-            }
-            TypeErrorKind::NotCallable { ty } => format!("'{}' is not callable", ty),
-            TypeErrorKind::NotARecord { ty } => format!("'{}' is not a record", ty),
-            TypeErrorKind::UndefinedField { field, .. } => format!("field '{}' not found", field),
-            TypeErrorKind::NotIndexable { ty } => format!("'{}' cannot be indexed", ty),
-            TypeErrorKind::PatternMismatch { .. } => "pattern mismatch".to_string(),
-            TypeErrorKind::NonExhaustive { .. } => "non-exhaustive patterns".to_string(),
-            TypeErrorKind::DuplicateDefinition { name } => format!("'{}' already defined", name),
-            TypeErrorKind::AnnotationMismatch { annotated, inferred } => {
-                format!("annotation {} doesn't match inferred {}", annotated, inferred)
-            }
-            TypeErrorKind::RecordFieldCount { expected, found, .. } => {
-                format!("expected {} field(s), found {}", expected, found)
-            }
-            TypeErrorKind::MissingField { field, .. } => {
-                format!("missing field `{}`", field)
-            }
-            TypeErrorKind::ModuleNotFound { module } => {
-                format!("module '{}' not found", module)
-            }
-            TypeErrorKind::CircularImport { module, .. } => {
-                format!("circular import: '{}'", module)
-            }
-            TypeErrorKind::ModuleIOError { module, .. } => {
-                format!("error reading module '{}'", module)
-            }
-            TypeErrorKind::ModuleParseError { module, .. } => {
-                format!("parse error in module '{}'", module)
-            }
-            TypeErrorKind::ModuleTypeError { .. } => {
-                unreachable!("handled above")
-            }
-        };
-        Self {
-            src: NamedSource::new(filename, source.to_string()),
-            span: (span_range.start, span_range.end - span_range.start).into(),
-            label_text,
             inner: error,
         }
     }
 }
 
 fn print_parse_error(error: ParseError, source: &str, filename: &str) {
-    let sourced = SourcedParseError::new(error, source, filename);
-    eprintln!("{:?}", miette::Report::new(sourced));
+    eprintln!("{:?}", miette::Report::new(SourcedError::new(error, source, filename)));
 }
 
 fn print_eval_error(error: EvalError, source: &str, filename: &str) {
-    let sourced = SourcedEvalError::new(error, source, filename);
-    eprintln!("{:?}", miette::Report::new(sourced));
+    eprintln!("{:?}", miette::Report::new(SourcedError::new(error, source, filename)));
 }
 
 fn print_type_error(error: TypeError, source: &str, filename: &str) {
-    let sourced = SourcedTypeError::new(error, source, filename);
-    eprintln!("{:?}", miette::Report::new(sourced));
+    // For module type errors, render against the module's own source.
+    if let TypeError::ModuleTypeError {
+        file_path,
+        module_source,
+        inner,
+        ..
+    } = &error
+    {
+        let inner = inner.as_ref().clone();
+        let file_path = file_path.clone();
+        let module_source = module_source.clone();
+        print_type_error(inner, &module_source, &file_path);
+        return;
+    }
+    eprintln!("{:?}", miette::Report::new(SourcedError::new(error, source, filename)));
 }
 
 fn print_usage() {

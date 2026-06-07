@@ -47,6 +47,19 @@ pub fn check_program_with_env(
     Ok(())
 }
 
+/// If the error is a Mismatch without an `expected_span`, attach one.
+pub(crate) fn add_expected_span(err: TypeError, expected_span: ivy_syntax::Span) -> TypeError {
+    match err {
+        TypeError::Mismatch {
+            expected,
+            found,
+            span,
+            expected_span: None,
+        } => TypeError::mismatch_at(expected, found, span, expected_span),
+        other => other,
+    }
+}
+
 /// Type check a single declaration
 fn check_decl(
     checker: &mut TypeChecker,
@@ -72,7 +85,10 @@ fn check_decl(
             let value_ty = checker.infer(value, env)?;
             if let Some(ann) = ty {
                 let ann_ty = checker.type_expr_to_type(&ann.node, env);
-                unify::unify_with_subst(&value_ty, &ann_ty, &mut checker.subst, ann.span)?;
+                // unify(expected, found): annotation is the expected type; value is what we got.
+                // Span points at the value (the wrong thing); enrich with the annotation span.
+                unify::unify_with_subst(&ann_ty, &value_ty, &mut checker.subst, value.span)
+                    .map_err(|e| add_expected_span(e, ann.span))?;
             }
 
             if let Some(existing) = existing_scheme {
@@ -248,7 +264,13 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
 
     if let Some(ann) = &fn_decl.return_ty {
         let ann_ty = checker.type_expr_to_type_scoped(&ann.node, env, Some(&mut type_var_scope));
-        unify::unify_with_subst(&body_ty, &ann_ty, &mut checker.subst, ann.span)?;
+        let body_span = match &fn_decl.body {
+            FnBody::Expr(expr) => expr.span,
+            FnBody::Guards(guards) => guards.first().map(|g| g.body.span).unwrap_or(fn_decl.span),
+        };
+        // unify(expected, found): annotation is expected, body type is found.
+        unify::unify_with_subst(&ann_ty, &body_ty, &mut checker.subst, body_span)
+            .map_err(|e| add_expected_span(e, ann.span))?;
     }
 
     let mut fn_ty = body_ty;

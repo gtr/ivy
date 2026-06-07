@@ -12,3 +12,5 @@ workspace = true
 [dependencies]
 ivy-syntax.workspace = true
 ivy-parse.workspace = true
+thiserror.workspace = true
+miette.workspace = true

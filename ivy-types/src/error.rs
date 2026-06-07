@@ -1,338 +1,395 @@
 use crate::types::{Type, TypeVar};
 use ivy_syntax::Span;
-use std::error::Error;
-use std::fmt;
+use miette::Diagnostic;
+use thiserror::Error;
 
-/// A type error with source location.
-#[derive(Debug, Clone)]
-pub struct TypeError {
-    pub kind: TypeErrorKind,
-    pub span: Span,
-}
+pub type TypeResult<T> = Result<T, TypeError>;
 
-/// The kind of type error.
-#[derive(Debug, Clone)]
-pub enum TypeErrorKind {
-    /// Two types that should be equal but are not.
-    Mismatch { expected: Type, found: Type },
+/// Backwards-compatible alias for use sites that pattern-match on a `kind`.
+/// Prefer matching on `TypeError` variants directly.
+pub type TypeErrorKind = TypeError;
 
-    /// Infinite type detected during unification
-    InfiniteType { var: TypeVar, ty: Type },
+#[derive(Error, Debug, Clone, Diagnostic)]
+pub enum TypeError {
+    #[error("type mismatch: expected {expected}, found {found}")]
+    #[diagnostic(code(ivy::types::mismatch))]
+    Mismatch {
+        expected: Type,
+        found: Type,
+        #[label(primary, "this has type {found}")]
+        span: Span,
+        #[label("expected {expected} because of this")]
+        expected_span: Option<Span>,
+    },
 
-    /// Variable not found in scope.
-    UndefinedVariable { name: String },
+    #[error("infinite type: {var} occurs in {ty}")]
+    #[diagnostic(code(ivy::types::infinite_type))]
+    InfiniteType {
+        var: TypeVar,
+        ty: Type,
+        #[label("infinite type")]
+        span: Span,
+    },
 
-    /// Type not found in scope.
-    UndefinedType { name: String },
+    #[error("undefined variable: {name}")]
+    #[diagnostic(
+        code(ivy::types::undefined_variable),
+        help("is `{name}` defined in scope? check imports and spelling")
+    )]
+    UndefinedVariable {
+        name: String,
+        #[label("'{name}' not found")]
+        span: Span,
+    },
 
-    /// Constructor not found.
-    UndefinedConstructor { name: String },
+    #[error("undefined type: {name}")]
+    #[diagnostic(code(ivy::types::undefined_type))]
+    UndefinedType {
+        name: String,
+        #[label("type '{name}' not found")]
+        span: Span,
+    },
 
-    /// Wrong number of arguments.
+    #[error("undefined constructor: {name}")]
+    #[diagnostic(code(ivy::types::undefined_constructor))]
+    UndefinedConstructor {
+        name: String,
+        #[label("constructor '{name}' not found")]
+        span: Span,
+    },
+
+    #[error("{name} expects {expected} argument{}, but {found} {} provided", plural(*expected), was_were(*found))]
+    #[diagnostic(code(ivy::types::arity_mismatch))]
     ArityMismatch {
         name: String,
         expected: usize,
         found: usize,
+        #[label("expected {expected} args, got {found}")]
+        span: Span,
     },
 
-    /// Trying to call a non-function.
-    NotCallable { ty: Type },
+    #[error("type {ty} is not callable")]
+    #[diagnostic(
+        code(ivy::types::not_callable),
+        help("only functions can be called; values of type `{ty}` are not")
+    )]
+    NotCallable {
+        ty: Type,
+        #[label("cannot be called")]
+        span: Span,
+    },
 
-    /// Trying to access a field on a non-record.
-    NotARecord { ty: Type },
+    #[error("type {ty} is not a record")]
+    #[diagnostic(code(ivy::types::not_a_record))]
+    NotARecord {
+        ty: Type,
+        #[label("not a record")]
+        span: Span,
+    },
 
-    /// Field not found in record.
-    UndefinedField { record: String, field: String },
+    #[error("record {record} has no field {field}")]
+    #[diagnostic(code(ivy::types::undefined_field))]
+    UndefinedField {
+        record: String,
+        field: String,
+        #[label("field '{field}' not found")]
+        span: Span,
+    },
 
-    /// Trying to index a non-list/tuple.
-    NotIndexable { ty: Type },
+    #[error("type {ty} cannot be indexed")]
+    #[diagnostic(code(ivy::types::not_indexable))]
+    NotIndexable {
+        ty: Type,
+        #[label("not indexable")]
+        span: Span,
+    },
 
-    /// Pattern doesn't match the type being matched.
-    PatternMismatch { pattern: String, ty: Type },
+    #[error("pattern {pattern} does not match type {ty}")]
+    #[diagnostic(code(ivy::types::pattern_mismatch))]
+    PatternMismatch {
+        pattern: String,
+        ty: Type,
+        #[label("pattern doesn't match {ty}")]
+        span: Span,
+    },
 
-    /// Non-exhaustive pattern match.
-    NonExhaustive { missing: Vec<String> },
+    #[error("non-exhaustive patterns, missing: {}", missing.join(", "))]
+    #[diagnostic(
+        code(ivy::types::non_exhaustive),
+        help("add arms for: {}, or use `_` to catch all", missing.join(", "))
+    )]
+    NonExhaustive {
+        missing: Vec<String>,
+        #[label("this value can be {}", missing.join(", "))]
+        span: Span,
+    },
 
-    /// Duplicate definition.
-    DuplicateDefinition { name: String },
+    #[error("duplicate definition: {name}")]
+    #[diagnostic(code(ivy::types::duplicate_definition))]
+    DuplicateDefinition {
+        name: String,
+        #[label("'{name}' already defined")]
+        span: Span,
+    },
 
-    /// Type annotation doesn't match inferred type.
-    AnnotationMismatch { annotated: Type, inferred: Type },
+    #[error("type annotation {annotated} doesn't match inferred type {inferred}")]
+    #[diagnostic(code(ivy::types::annotation_mismatch))]
+    AnnotationMismatch {
+        annotated: Type,
+        inferred: Type,
+        #[label("annotated as {annotated}, inferred {inferred}")]
+        span: Span,
+    },
 
-    /// Record field count mismatch
+    #[error("record `{record}` has {expected} field{}, but {found} {} provided", plural(*expected), was_were(*found))]
+    #[diagnostic(code(ivy::types::record_field_count))]
     RecordFieldCount {
         record: String,
         expected: usize,
         found: usize,
+        #[label("expected {expected} fields, got {found}")]
+        span: Span,
     },
 
-    /// Missing field in record literal
-    MissingField { record: String, field: String },
+    #[error("missing field `{field}` in record {record}")]
+    #[diagnostic(code(ivy::types::missing_field))]
+    MissingField {
+        record: String,
+        field: String,
+        #[label("missing field '{field}'")]
+        span: Span,
+    },
 
-    /// Module not found
-    ModuleNotFound { module: String },
+    #[error("module not found: {module}")]
+    #[diagnostic(code(ivy::types::module_not_found))]
+    ModuleNotFound {
+        module: String,
+        #[label("module '{module}' not found")]
+        span: Span,
+    },
 
-    /// Circular import detected
-    CircularImport { module: String, cycle: Vec<String> },
+    #[error("circular import detected: {module}")]
+    #[diagnostic(code(ivy::types::circular_import), help("import cycle: {} -> {module}", cycle.join(" -> ")))]
+    CircularImport {
+        module: String,
+        cycle: Vec<String>,
+        #[label("circular import")]
+        span: Span,
+    },
 
-    /// IO error reading module
-    ModuleIOError { module: String, error: String },
+    #[error("error reading module {module}: {error}")]
+    #[diagnostic(code(ivy::types::module_io_error))]
+    ModuleIOError {
+        module: String,
+        error: String,
+        #[label("could not read module")]
+        span: Span,
+    },
 
-    /// Parse error in module
-    ModuleParseError { module: String, error: String },
+    #[error("parse error in module {module}: {error}")]
+    #[diagnostic(code(ivy::types::module_parse_error))]
+    ModuleParseError {
+        module: String,
+        error: String,
+        #[label("parse error in module")]
+        span: Span,
+    },
 
-    /// Type error in module
+    #[error("type error in module {module}: {inner}")]
+    #[diagnostic(code(ivy::types::module_type_error))]
     ModuleTypeError {
         module: String,
         file_path: String,
-        source: String,
+        module_source: String,
         inner: Box<TypeError>,
     },
 }
 
 impl TypeError {
-    pub fn new(kind: TypeErrorKind, span: Span) -> TypeError {
-        TypeError { kind, span }
+    /// Get the primary span associated with this error (for callers that need it).
+    pub fn span(&self) -> Span {
+        match self {
+            TypeError::Mismatch { span, .. }
+            | TypeError::InfiniteType { span, .. }
+            | TypeError::UndefinedVariable { span, .. }
+            | TypeError::UndefinedType { span, .. }
+            | TypeError::UndefinedConstructor { span, .. }
+            | TypeError::ArityMismatch { span, .. }
+            | TypeError::NotCallable { span, .. }
+            | TypeError::NotARecord { span, .. }
+            | TypeError::UndefinedField { span, .. }
+            | TypeError::NotIndexable { span, .. }
+            | TypeError::PatternMismatch { span, .. }
+            | TypeError::NonExhaustive { span, .. }
+            | TypeError::DuplicateDefinition { span, .. }
+            | TypeError::AnnotationMismatch { span, .. }
+            | TypeError::RecordFieldCount { span, .. }
+            | TypeError::MissingField { span, .. }
+            | TypeError::ModuleNotFound { span, .. }
+            | TypeError::CircularImport { span, .. }
+            | TypeError::ModuleIOError { span, .. }
+            | TypeError::ModuleParseError { span, .. } => *span,
+            TypeError::ModuleTypeError { inner, .. } => inner.span(),
+        }
     }
 
     pub fn mismatch(expected: Type, found: Type, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::Mismatch { expected, found }, span)
+        TypeError::Mismatch {
+            expected,
+            found,
+            span,
+            expected_span: None,
+        }
+    }
+
+    pub fn mismatch_at(expected: Type, found: Type, span: Span, expected_span: Span) -> TypeError {
+        TypeError::Mismatch {
+            expected,
+            found,
+            span,
+            expected_span: Some(expected_span),
+        }
     }
 
     pub fn infinite_type(var: TypeVar, ty: Type, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::InfiniteType { var, ty }, span)
+        TypeError::InfiniteType { var, ty, span }
     }
 
     pub fn undefined_variable(name: &str, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::UndefinedVariable { name: name.to_string() }, span)
+        TypeError::UndefinedVariable {
+            name: name.to_string(),
+            span,
+        }
     }
 
     pub fn undefined_type(name: &str, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::UndefinedType { name: name.to_string() }, span)
+        TypeError::UndefinedType {
+            name: name.to_string(),
+            span,
+        }
     }
 
     pub fn undefined_constructor(name: &str, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::UndefinedConstructor { name: name.to_string() }, span)
+        TypeError::UndefinedConstructor {
+            name: name.to_string(),
+            span,
+        }
     }
 
     pub fn arity_mismatch(name: &str, expected: usize, found: usize, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::ArityMismatch {
-                name: name.to_string(),
-                expected,
-                found,
-            },
+        TypeError::ArityMismatch {
+            name: name.to_string(),
+            expected,
+            found,
             span,
-        )
+        }
     }
 
     pub fn not_callable(ty: Type, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::NotCallable { ty }, span)
+        TypeError::NotCallable { ty, span }
     }
 
     pub fn not_a_record(ty: Type, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::NotARecord { ty }, span)
+        TypeError::NotARecord { ty, span }
     }
 
     pub fn undefined_field(record: &str, field: &str, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::UndefinedField {
-                record: record.to_string(),
-                field: field.to_string(),
-            },
+        TypeError::UndefinedField {
+            record: record.to_string(),
+            field: field.to_string(),
             span,
-        )
+        }
     }
 
     pub fn not_indexable(ty: Type, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::NotIndexable { ty }, span)
+        TypeError::NotIndexable { ty, span }
     }
 
     pub fn duplicate_definition(name: &str, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::DuplicateDefinition { name: name.to_string() }, span)
+        TypeError::DuplicateDefinition {
+            name: name.to_string(),
+            span,
+        }
     }
 
     pub fn annotation_mismatch(annotated: Type, inferred: Type, span: Span) -> TypeError {
-        TypeError::new(TypeErrorKind::AnnotationMismatch { annotated, inferred }, span)
+        TypeError::AnnotationMismatch {
+            annotated,
+            inferred,
+            span,
+        }
     }
 
     pub fn record_field_count(record: &str, expected: usize, found: usize, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::RecordFieldCount {
-                record: record.to_string(),
-                expected,
-                found,
-            },
+        TypeError::RecordFieldCount {
+            record: record.to_string(),
+            expected,
+            found,
             span,
-        )
+        }
     }
 
     pub fn missing_field(record: &str, field: &str, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::MissingField {
-                record: record.to_string(),
-                field: field.to_string(),
-            },
+        TypeError::MissingField {
+            record: record.to_string(),
+            field: field.to_string(),
             span,
-        )
+        }
     }
 
     pub fn module_not_found(module: &str, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::ModuleNotFound {
-                module: module.to_string(),
-            },
+        TypeError::ModuleNotFound {
+            module: module.to_string(),
             span,
-        )
+        }
     }
 
     pub fn circular_import(module: &str, cycle: Vec<String>, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::CircularImport {
-                module: module.to_string(),
-                cycle,
-            },
+        TypeError::CircularImport {
+            module: module.to_string(),
+            cycle,
             span,
-        )
+        }
     }
 
     pub fn module_io_error(module: &str, error: &str, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::ModuleIOError {
-                module: module.to_string(),
-                error: error.to_string(),
-            },
+        TypeError::ModuleIOError {
+            module: module.to_string(),
+            error: error.to_string(),
             span,
-        )
+        }
     }
 
     pub fn module_parse_error(module: &str, error: &str, span: Span) -> TypeError {
-        TypeError::new(
-            TypeErrorKind::ModuleParseError {
-                module: module.to_string(),
-                error: error.to_string(),
-            },
+        TypeError::ModuleParseError {
+            module: module.to_string(),
+            error: error.to_string(),
             span,
-        )
+        }
     }
 
-    pub fn module_type_error(module: &str, file_path: &str, source: &str, inner: TypeError) -> TypeError {
-        let span = inner.span;
-        TypeError::new(
-            TypeErrorKind::ModuleTypeError {
-                module: module.to_string(),
-                file_path: file_path.to_string(),
-                source: source.to_string(),
-                inner: Box::new(inner),
-            },
-            span,
-        )
-    }
-}
-
-impl fmt::Display for TypeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.kind {
-            TypeErrorKind::Mismatch { expected, found } => {
-                write!(f, "type mismatch: expected {}, found {}", expected, found)
-            }
-            TypeErrorKind::InfiniteType { var, ty } => {
-                write!(
-                    f,
-                    "infinite type: {} occurs in {} (cannot construct infinite type)",
-                    var, ty
-                )
-            }
-            TypeErrorKind::UndefinedVariable { name } => {
-                write!(f, "undefined variable: {}", name)
-            }
-            TypeErrorKind::UndefinedType { name } => {
-                write!(f, "undefined type: {}", name)
-            }
-            TypeErrorKind::UndefinedConstructor { name } => {
-                write!(f, "undefined constructor: {}", name)
-            }
-            TypeErrorKind::ArityMismatch { name, expected, found } => {
-                write!(
-                    f,
-                    "{} expects {} argument{}, but {} {} provided",
-                    name,
-                    expected,
-                    if *expected == 1 { "" } else { "s" },
-                    found,
-                    if *found == 1 { "was" } else { "were" }
-                )
-            }
-            TypeErrorKind::NotCallable { ty } => {
-                write!(f, "type {} is not callable", ty)
-            }
-            TypeErrorKind::NotARecord { ty } => {
-                write!(f, "type {} is not a record", ty)
-            }
-            TypeErrorKind::UndefinedField { record, field } => {
-                write!(f, "record {} has no field {}", record, field)
-            }
-            TypeErrorKind::NotIndexable { ty } => {
-                write!(f, "type {} cannot be indexed", ty)
-            }
-            TypeErrorKind::PatternMismatch { pattern, ty } => {
-                write!(f, "pattern {} does not match type {}", pattern, ty)
-            }
-            TypeErrorKind::NonExhaustive { missing } => {
-                write!(f, "non-exhaustive patterns, missing: {}", missing.join(", "))
-            }
-            TypeErrorKind::DuplicateDefinition { name } => {
-                write!(f, "duplicate definition: {}", name)
-            }
-            TypeErrorKind::AnnotationMismatch { annotated, inferred } => {
-                write!(
-                    f,
-                    "type annotation {} doesn't match inferred type {}",
-                    annotated, inferred
-                )
-            }
-            TypeErrorKind::RecordFieldCount {
-                record,
-                expected,
-                found,
-            } => {
-                write!(
-                    f,
-                    "record `{}`  has {} field{}, but {} {} provided",
-                    record,
-                    expected,
-                    if *expected == 1 { "" } else { "s" },
-                    found,
-                    if *found == 1 { "was" } else { "were" }
-                )
-            }
-            TypeErrorKind::MissingField { record, field } => {
-                write!(f, "missing field `{}` in record {}", field, record)
-            }
-            TypeErrorKind::ModuleNotFound { module } => {
-                write!(f, "module not found: {}", module)
-            }
-            TypeErrorKind::CircularImport { module, cycle } => {
-                write!(
-                    f,
-                    "circular import detected: {} (cycle: {} -> {})",
-                    module,
-                    cycle.join(" -> "),
-                    module
-                )
-            }
-            TypeErrorKind::ModuleIOError { module, error } => {
-                write!(f, "error reading module {}: {}", module, error)
-            }
-            TypeErrorKind::ModuleParseError { module, error } => {
-                write!(f, "parse error in module {}: {}", module, error)
-            }
-            TypeErrorKind::ModuleTypeError { module, inner, .. } => {
-                write!(f, "type error in module {}: {}", module, inner)
-            }
+    pub fn module_type_error(module: &str, file_path: &str, module_source: &str, inner: TypeError) -> TypeError {
+        TypeError::ModuleTypeError {
+            module: module.to_string(),
+            file_path: file_path.to_string(),
+            module_source: module_source.to_string(),
+            inner: Box::new(inner),
         }
     }
 }
 
-impl Error for TypeError {}
-pub type TypeResult<T> = Result<T, TypeError>;
+fn plural(n: usize) -> &'static str {
+    if n == 1 {
+        ""
+    } else {
+        "s"
+    }
+}
+
+fn was_were(n: usize) -> &'static str {
+    if n == 1 {
+        "was"
+    } else {
+        "were"
+    }
+}

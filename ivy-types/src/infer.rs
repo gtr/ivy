@@ -74,7 +74,7 @@ impl TypeChecker {
                 else_branch,
             } => self.infer_if(condition, then_branch, else_branch, env, span),
 
-            Expr::Match { scrutinee, arms } => self.infer_match(scrutinee, arms, env, span),
+            Expr::Match { scrutinee, arms } => self.infer_match(scrutinee, arms, env),
 
             Expr::Lambda {
                 params,
@@ -311,26 +311,22 @@ impl TypeChecker {
         then_branch: &Spanned<Expr>,
         else_branch: &Spanned<Expr>,
         env: &TypeEnv,
-        span: Span,
+        _span: Span,
     ) -> TypeResult<Type> {
         let cond_ty = self.infer(condition, env)?;
-        unify_with_subst(&cond_ty, &Type::Bool, &mut self.subst, condition.span)?;
+        unify_with_subst(&Type::Bool, &cond_ty, &mut self.subst, condition.span)?;
 
         let then_ty = self.infer(then_branch, env)?;
         let else_ty = self.infer(else_branch, env)?;
-        unify_with_subst(&then_ty, &else_ty, &mut self.subst, span)?;
+        // expected = then-branch type (the "first one wins"), found = else-branch type.
+        unify_with_subst(&then_ty, &else_ty, &mut self.subst, else_branch.span)
+            .map_err(|e| crate::add_expected_span(e, then_branch.span))?;
 
         Ok(then_ty)
     }
 
     /// Infer the type of a match expression.
-    fn infer_match(
-        &mut self,
-        scrutinee: &Spanned<Expr>,
-        arms: &[MatchArm],
-        env: &TypeEnv,
-        span: Span,
-    ) -> TypeResult<Type> {
+    fn infer_match(&mut self, scrutinee: &Spanned<Expr>, arms: &[MatchArm], env: &TypeEnv) -> TypeResult<Type> {
         let scrutinee_ty = self.infer(scrutinee, env)?;
 
         if arms.is_empty() {
@@ -354,10 +350,11 @@ impl TypeChecker {
             }
         }
 
-        // Check exhaustiveness
+        // Check exhaustiveness — point at the scrutinee, since that's the value whose
+        // shape the user needs to handle.
         let patterns: Vec<&Pattern> = arms.iter().map(|arm| &arm.pattern.node).collect();
         let resolved_ty = self.subst.apply(&scrutinee_ty);
-        exhaustiveness::check_exhaustiveness(&resolved_ty, &patterns, &self.registry, span)?;
+        exhaustiveness::check_exhaustiveness(&resolved_ty, &patterns, &self.registry, scrutinee.span)?;
 
         Ok(result_ty.unwrap_or_else(|| self.gen.fresh_type()))
     }
@@ -414,21 +411,40 @@ impl TypeChecker {
         span: Span,
     ) -> TypeResult<Type> {
         let callee_ty = self.infer(callee, env)?;
-        let mut arg_types = Vec::new();
-        for arg in args {
-            arg_types.push(self.infer(arg, env)?);
+        let resolved_callee = self.subst.apply(&callee_ty);
+
+        // Compute the callee's arity if it's a fully-known function chain
+        // Returns None if the type is a type variable (unknown arity) or non-function.
+        let callee_arity = arity_of(&resolved_callee);
+
+        // Walk param-by-param: each arg unifies against the matching param type
+        // The arg's own span becomes the primary error location.
+        let mut current = resolved_callee;
+        for (i, arg) in args.iter().enumerate() {
+            let arg_ty = self.infer(arg, env)?;
+            let resolved = self.subst.apply(&current);
+            match resolved {
+                Type::Fun(param, result) => {
+                    unify_with_subst(&param, &arg_ty, &mut self.subst, arg.span)
+                        .map_err(|e| crate::add_expected_span(e, callee.span))?;
+                    current = *result;
+                }
+                _ => {
+                    // Ran out of params. If we know the callee's arity, this is an
+                    // arity mismatch. Otherwise we fall back to general unification.
+                    if let Some(arity) = callee_arity {
+                        let name = callee_name(callee);
+                        return Err(TypeError::arity_mismatch(&name, arity, args.len(), span));
+                    }
+                    let result_ty = self.gen.fresh_type();
+                    let expected = Type::fun(arg_ty, result_ty.clone());
+                    unify_with_subst(&resolved, &expected, &mut self.subst, args[i].span)?;
+                    current = result_ty;
+                }
+            }
         }
 
-        // Build expected function type: arg1 -> arg2 -> ... -> result
-        let result_ty = self.gen.fresh_type();
-        let mut expected = result_ty.clone();
-        for arg_ty in arg_types.into_iter().rev() {
-            expected = Type::fun(arg_ty, expected);
-        }
-
-        unify_with_subst(&callee_ty, &expected, &mut self.subst, span)?;
-
-        Ok(result_ty)
+        Ok(current)
     }
 
     /// Infer the type of a field access
@@ -539,16 +555,18 @@ impl TypeChecker {
     }
 
     /// Infer the type of a list.
-    fn infer_list(&mut self, elements: &[Spanned<Expr>], env: &TypeEnv, span: Span) -> TypeResult<Type> {
+    fn infer_list(&mut self, elements: &[Spanned<Expr>], env: &TypeEnv, _span: Span) -> TypeResult<Type> {
         if elements.is_empty() {
             return Ok(Type::list(self.gen.fresh_type()));
         }
 
         let first_ty = self.infer(&elements[0], env)?;
+        let first_span = elements[0].span;
 
         for elem in &elements[1..] {
             let elem_ty = self.infer(elem, env)?;
-            unify_with_subst(&first_ty, &elem_ty, &mut self.subst, span)?;
+            unify_with_subst(&first_ty, &elem_ty, &mut self.subst, elem.span)
+                .map_err(|e| crate::add_expected_span(e, first_span))?;
         }
 
         Ok(Type::list(first_ty))
@@ -832,6 +850,31 @@ impl TypeChecker {
 impl Default for TypeChecker {
     fn default() -> Self {
         TypeChecker::new()
+    }
+}
+
+/// Count parameters in a function type chain. Returns None if the head is
+/// not a `Type::Fun` (the type is a type variable or other non-function).
+fn arity_of(ty: &Type) -> Option<usize> {
+    let mut n = 0;
+    let mut current = ty;
+    while let Type::Fun(_, result) = current {
+        n += 1;
+        current = result;
+    }
+    if n == 0 {
+        None
+    } else {
+        Some(n)
+    }
+}
+
+/// Best-effort name for the callee used in arity error messages.
+fn callee_name(callee: &Spanned<Expr>) -> String {
+    match &callee.node {
+        Expr::Var(ident) => ident.name.clone(),
+        Expr::Field { field, .. } => field.name.clone(),
+        _ => "function".to_string(),
     }
 }
 

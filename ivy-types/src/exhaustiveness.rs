@@ -8,7 +8,7 @@ use ivy_syntax::lit::Literal;
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::Span;
 
-use crate::error::{TypeError, TypeErrorKind, TypeResult};
+use crate::error::{TypeError, TypeResult};
 use crate::registry::TypeRegistry;
 use crate::types::Type;
 
@@ -24,7 +24,7 @@ pub fn check_exhaustiveness(
     let missing = find_missing_patterns(scrutinee_ty, patterns, registry);
 
     if !missing.is_empty() {
-        return Err(TypeError::new(TypeErrorKind::NonExhaustive { missing }, span));
+        return Err(TypeError::NonExhaustive { missing, span });
     }
 
     Ok(())

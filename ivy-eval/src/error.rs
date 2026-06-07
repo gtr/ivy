@@ -7,7 +7,10 @@ pub type EvalResult<T> = Result<T, EvalError>;
 #[derive(Error, Debug, Diagnostic)]
 pub enum EvalError {
     #[error("Undefined variable: {name}")]
-    #[diagnostic(code(ivy::eval::undefined_variable))]
+    #[diagnostic(
+        code(ivy::eval::undefined_variable),
+        help("is `{name}` defined in scope? check imports and spelling")
+    )]
     UndefinedVariable {
         name: String,
         #[label("not found in scope")]
@@ -32,7 +35,10 @@ pub enum EvalError {
     },
 
     #[error("Pattern match failed: no matching clause")]
-    #[diagnostic(code(ivy::eval::match_failed))]
+    #[diagnostic(
+        code(ivy::eval::match_failed),
+        help("consider adding a wildcard arm `_ -> ...` to handle unmatched values")
+    )]
     MatchFailed {
         #[label("no pattern matched this value")]
         span: Span,
@@ -63,7 +69,7 @@ pub enum EvalError {
     },
 
     #[error("Index out of bounds: {index} (length {length})")]
-    #[diagnostic(code(ivy::eval::index_out_of_bounds))]
+    #[diagnostic(code(ivy::eval::index_out_of_bounds), help("valid indices are 0..{length}"))]
     IndexOutOfBounds {
         index: i64,
         length: usize,
