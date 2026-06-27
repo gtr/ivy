@@ -820,6 +820,9 @@ impl Interpreter {
                     TypeBody::Record(_) => {
                         // Record types don't need special constructor registration
                     }
+                    TypeBody::Alias(_) => {
+                        // Type aliases are purely a type-level concern; no runtime effect
+                    }
                 }
                 Ok(Value::Unit)
             }

@@ -126,13 +126,15 @@ impl GuardedExpr {
     }
 }
 
-/// Type body - sum type or record type.
+/// Type body: sum type, record type, or alias.
 #[derive(Debug, Clone)]
 pub enum TypeBody {
     /// Sum type: | None | Some(a)
     Sum(Vec<Variant>),
     /// Record type: { name: String, age: Int }
     Record(Vec<RecordField>),
+    /// Type alias: = SomeType
+    Alias(Spanned<TypeExpr>),
 }
 
 /// Sum type variant: None or Some(a)

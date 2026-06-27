@@ -130,6 +130,7 @@ impl<'a> Parser<'a> {
             TokenKind::Module => self.parse_module_decl()?,
             TokenKind::Import | TokenKind::From => self.parse_import_decl()?,
             TokenKind::Type => self.parse_type_decl(is_pub)?,
+            TokenKind::Newtype => self.parse_newtype_decl(is_pub)?,
             TokenKind::Trait => self.parse_trait_decl(is_pub)?,
             TokenKind::Impl => self.parse_impl_decl()?,
             TokenKind::Fn => self.parse_fn_decl(is_pub)?,
@@ -238,7 +239,9 @@ impl<'a> Parser<'a> {
             // Record type
             self.parse_record_type()?
         } else {
-            return Err(ParseError::unexpected("'|' or '{'", self.current()));
+            // Type alias: `type Name = TypeExpr`
+            let ty = self.parse_type_expr()?;
+            TypeBody::Alias(ty)
         };
 
         self.expect(TokenKind::Semi)?;
@@ -248,6 +251,40 @@ impl<'a> Parser<'a> {
             name,
             params,
             body,
+        })
+    }
+
+    /// Parse `newtype Name<params> = TypeExpr;` as sugar for
+    /// `type Name<params> = | Name(TypeExpr);`
+    ///
+    /// Produces a distinct type with the same runtime repr as the underlying type
+    fn parse_newtype_decl(&mut self, is_pub: bool) -> ParseResult<Decl> {
+        let start = self.current().span.start;
+        self.expect(TokenKind::Newtype)?;
+        let name = self.parse_type_ident()?;
+
+        let params = if self.match_token(TokenKind::Lt).is_some() {
+            let mut params = vec![self.parse_ident_any()?];
+            while self.match_token(TokenKind::Comma).is_some() {
+                params.push(self.parse_ident_any()?);
+            }
+            self.expect(TokenKind::Gt)?;
+            params
+        } else {
+            Vec::new()
+        };
+
+        self.expect(TokenKind::Eq)?;
+        let inner = self.parse_type_expr()?;
+        self.expect(TokenKind::Semi)?;
+
+        let span = self.span_from(start);
+        let variant = Variant::new(name.clone(), vec![inner], span);
+        Ok(Decl::Type {
+            is_pub,
+            name,
+            params,
+            body: TypeBody::Sum(vec![variant]),
         })
     }
 

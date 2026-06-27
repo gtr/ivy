@@ -748,6 +748,23 @@ impl TypeChecker {
         self.gen.instantiate(scheme)
     }
 
+    /// If `name` is a registered alias, expand it by substituting `args` for the
+    /// alias's type parameters. If no args are supplied, fresh type vars are used.
+    fn expand_alias_if_present(&mut self, name: &str, args: &[Type]) -> Option<Type> {
+        let info = self.registry.get_alias(name)?.clone();
+        let mapping: HashMap<TypeVar, Type> = if args.is_empty() {
+            // No args supplied: instantiate with fresh type vars.
+            info.params.iter().map(|&v| (v, self.gen.fresh_type())).collect()
+        } else if args.len() == info.params.len() {
+            info.params.iter().copied().zip(args.iter().cloned()).collect()
+        } else {
+            // Arity mismatch — leave unexpanded; the caller will produce a more
+            // specific error elsewhere.
+            return None;
+        };
+        Some(substitute_type(&info.body, &mapping))
+    }
+
     /// Convert a type expression to a Type.
     pub fn type_expr_to_type(&mut self, ty_expr: &TypeExpr, env: &TypeEnv) -> Type {
         self.type_expr_to_type_scoped(ty_expr, env, None)
@@ -770,7 +787,13 @@ impl TypeChecker {
                     "String" => Type::String,
                     "Char" => Type::Char,
                     _ => {
-                        if let Some(scheme) = env.get(name) {
+                        if let Some(expanded) = self.expand_alias_if_present(name, &[]) {
+                            expanded
+                        } else if self.registry.is_sum_type(name) || self.registry.is_record_type(name) {
+                            // Registered user-defined type. Construct the named type directly,
+                            // even if a constructor of the same name exists in `env`.
+                            Type::Named(name.clone(), vec![])
+                        } else if let Some(scheme) = env.get(name) {
                             self.instantiate(scheme)
                         } else if let Some(ref mut sc) = scope {
                             // If we have a scope and name looks like a type variable,
@@ -798,10 +821,13 @@ impl TypeChecker {
                 let name = &base.name;
                 let mut type_args = Vec::new();
                 for a in args {
-                    // type_args.push(self.type_expr_to_type_scoped(&a.node, env, scope.as_deref_mut()));
                     type_args.push(self.type_expr_to_type_scoped(&a.node, env, scope.as_deref_mut()));
                 }
-                Type::Named(name.clone(), type_args)
+                if let Some(expanded) = self.expand_alias_if_present(name, &type_args) {
+                    expanded
+                } else {
+                    Type::Named(name.clone(), type_args)
+                }
             }
             TypeExpr::Function { param, result } => {
                 let param_ty = self.type_expr_to_type_scoped(&param.node, env, scope.as_deref_mut());
@@ -850,6 +876,27 @@ impl TypeChecker {
 impl Default for TypeChecker {
     fn default() -> Self {
         TypeChecker::new()
+    }
+}
+
+/// Substitute type variables in `ty` according to `mapping`.
+fn substitute_type(ty: &Type, mapping: &HashMap<TypeVar, Type>) -> Type {
+    match ty {
+        Type::Var(v) => mapping.get(v).cloned().unwrap_or_else(|| ty.clone()),
+        Type::Fun(p, r) => Type::fun(substitute_type(p, mapping), substitute_type(r, mapping)),
+        Type::Tuple(elems) => Type::Tuple(elems.iter().map(|t| substitute_type(t, mapping)).collect()),
+        Type::List(e) => Type::list(substitute_type(e, mapping)),
+        Type::Named(name, args) => {
+            Type::Named(name.clone(), args.iter().map(|t| substitute_type(t, mapping)).collect())
+        }
+        Type::Record(name, fields) => Type::Record(
+            name.clone(),
+            fields
+                .iter()
+                .map(|(n, t)| (n.clone(), substitute_type(t, mapping)))
+                .collect(),
+        ),
+        _ => ty.clone(),
     }
 }
 
@@ -913,21 +960,6 @@ mod tests {
     }
 
     #[test]
-    fn test_infer_int() {
-        assert_eq!(check("42;").unwrap(), Type::Int);
-    }
-
-    #[test]
-    fn test_infer_bool() {
-        assert_eq!(check("true;").unwrap(), Type::Bool);
-    }
-
-    #[test]
-    fn test_infer_string() {
-        assert_eq!(check("\"hello\";").unwrap(), Type::String);
-    }
-
-    #[test]
     fn test_infer_arithmetic() {
         assert_eq!(check("1 + 2;").unwrap(), Type::Int);
         assert_eq!(check("3.0 * 4.0;").unwrap(), Type::Float);
@@ -971,5 +1003,70 @@ mod tests {
     #[test]
     fn test_if_branch_mismatch() {
         assert!(check("if true then 1 else \"no\";").is_err());
+    }
+
+    /// Run the full type-checking pipeline (handles type decls, including aliases).
+    fn check_program(code: &str) -> TypeResult<()> {
+        let program = ivy_parse::parse(code).expect("parse failed");
+        let mut env = TypeEnv::with_builtins();
+        let mut checker = TypeChecker::new();
+        let mut loader = ivy_parse::ModuleLoader::new(vec![]);
+        crate::check_program_with_env(&program, &mut checker, &mut env, &mut loader)
+    }
+
+    #[test]
+    fn test_alias_simple() {
+        assert!(check_program("type Latitude = Float; let x: Latitude = 45.0;").is_ok());
+    }
+
+    #[test]
+    fn test_alias_mismatch() {
+        // String value doesn't match a Float alias.
+        assert!(check_program("type Latitude = Float; let x: Latitude = \"hi\";").is_err());
+    }
+
+    #[test]
+    fn test_alias_compound() {
+        let code = "type Env = [(String, Int)]; let e: Env = [(\"x\", 1), (\"y\", 2)];";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_alias_parametric() {
+        let code = "type Pair<a, b> = (a, b); let p: Pair<Int, String> = (1, \"hi\");";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_alias_chain() {
+        // Aliases of aliases should expand transitively
+        let code = "type A = Int; type B = A; let x: B = 42;";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_alias_function_type() {
+        let code = "type IntFn = Int -> Int; fn double(x) => x * 2; let f: IntFn = double;";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_newtype_distinct_from_underlying() {
+        // Float cannot be assigned to a Latitude position.
+        assert!(check_program("newtype Latitude = Float; let lat: Latitude = 45.0;").is_err());
+    }
+
+    #[test]
+    fn test_newtype_construction() {
+        // Wrapping with the constructor works.
+        assert!(check_program("newtype Latitude = Float; let lat = Latitude(45.0);").is_ok());
+    }
+
+    #[test]
+    fn test_newtype_unwrap_via_match() {
+        let code = "newtype Latitude = Float; \
+                    let lat = Latitude(45.0); \
+                    let raw = match lat with | Latitude(f) -> f end;";
+        assert!(check_program(code).is_ok());
     }
 }

@@ -20,6 +20,15 @@ pub struct RecordFieldInfo {
     pub ty: crate::Type,
 }
 
+/// Information about a type alias
+#[derive(Debug, Clone)]
+pub struct AliasInfo {
+    /// Type parameters bound by the alias (their TypeVar identities)
+    pub params: Vec<crate::TypeVar>,
+    /// The aliased type, with `params` referenced via `Type::Var`
+    pub body: crate::Type,
+}
+
 /// Registry of type definitions.
 ///
 /// Maintains mappings from type names -> constructors and vice versa
@@ -34,6 +43,9 @@ pub struct TypeRegistry {
 
     /// Maps record type name -> list of fields (in declaration order)
     records: HashMap<String, Vec<RecordFieldInfo>>,
+
+    /// Maps type alias name -> alias info
+    aliases: HashMap<String, AliasInfo>,
 }
 
 impl TypeRegistry {
@@ -121,6 +133,14 @@ impl TypeRegistry {
 
     pub fn is_record_type(&self, type_name: &str) -> bool {
         self.records.contains_key(type_name)
+    }
+
+    pub fn register_alias(&mut self, type_name: &str, params: Vec<crate::TypeVar>, body: crate::Type) {
+        self.aliases.insert(type_name.to_string(), AliasInfo { params, body });
+    }
+
+    pub fn get_alias(&self, type_name: &str) -> Option<&AliasInfo> {
+        self.aliases.get(type_name)
     }
 }
 
