@@ -135,6 +135,21 @@ mod parser_tests {
     }
 
     #[test]
+    fn test_parse_type_alias() {
+        assert!(parse("type Latitude = Float;").is_ok());
+        assert!(parse("type Env = [(String, Int)];").is_ok());
+        assert!(parse("type Pair<a, b> = (a, b);").is_ok());
+        assert!(parse("type IntFn = Int -> Int;").is_ok());
+    }
+
+    #[test]
+    fn test_parse_newtype() {
+        assert!(parse("newtype Latitude = Float;").is_ok());
+        assert!(parse("newtype Wrapper<a> = a;").is_ok());
+        assert!(parse("pub newtype UserId = Int;").is_ok());
+    }
+
+    #[test]
     fn test_parse_import() {
         assert!(parse("import Math;").is_ok());
         assert!(parse("import Math as M;").is_ok());

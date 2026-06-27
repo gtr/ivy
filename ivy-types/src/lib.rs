@@ -359,7 +359,6 @@ fn register_type_constructors(
             }
         }
         TypeBody::Record(fields) => {
-            // Register record type info in the type registry for field validation
             let mut field_types: Vec<(String, Type)> = Vec::with_capacity(fields.len());
             for f in fields {
                 let field_ty = checker.type_expr_to_type_scoped(&f.ty.node, env, Some(&mut param_scope));
@@ -367,6 +366,10 @@ fn register_type_constructors(
             }
 
             checker.registry.register_record(&name.name, &field_types);
+        }
+        TypeBody::Alias(ty) => {
+            let body_ty = checker.type_expr_to_type_scoped(&ty.node, env, Some(&mut param_scope));
+            checker.registry.register_alias(&name.name, type_params, body_ty);
         }
     }
 }

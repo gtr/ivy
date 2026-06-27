@@ -65,6 +65,7 @@ pub enum TokenKind {
     With,
     End,
     Type,
+    Newtype,
     Trait,
     Impl,
     Import,
@@ -163,6 +164,7 @@ impl TokenKind {
                 | TokenKind::With
                 | TokenKind::End
                 | TokenKind::Type
+                | TokenKind::Newtype
                 | TokenKind::Trait
                 | TokenKind::Impl
                 | TokenKind::Import
@@ -192,6 +194,7 @@ impl TokenKind {
             "with" => Some(TokenKind::With),
             "end" => Some(TokenKind::End),
             "type" => Some(TokenKind::Type),
+            "newtype" => Some(TokenKind::Newtype),
             "trait" => Some(TokenKind::Trait),
             "impl" => Some(TokenKind::Impl),
             "import" => Some(TokenKind::Import),
@@ -230,6 +233,7 @@ impl fmt::Display for TokenKind {
             TokenKind::With => "'with'",
             TokenKind::End => "'end'",
             TokenKind::Type => "'type'",
+            TokenKind::Newtype => "'newtype'",
             TokenKind::Trait => "'trait'",
             TokenKind::Impl => "'impl'",
             TokenKind::Import => "'import'",
