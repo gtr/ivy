@@ -18,7 +18,7 @@ use ivy_syntax::{collect_public_names, Ident, Program, Spanned};
 pub use registry::{TypeRegistry, VariantInfo};
 use std::collections::HashMap;
 pub use subst::Subst;
-pub use types::{Scheme, Type, TypeVar};
+pub use types::{Scheme, TraitConstraint, Type, TypeVar};
 pub use unify::unify;
 
 /// Type check an entire program (without import support, use check_program_with_env for imports).
@@ -69,8 +69,12 @@ fn check_decl(
 ) -> TypeResult<()> {
     match &decl.node {
         Decl::TypeSig { name, ty, .. } => {
-            let sig_ty = checker.type_expr_to_type(&ty.node, env);
+            let mut scope = HashMap::new();
+            let sig_ty = checker.type_expr_to_type_scoped(&ty.node, env, Some(&mut scope));
             let final_ty = checker.finalize(&sig_ty);
+            // Apply the substitution to the env so generalization sees solved
+            // vars correctly (otherwise constraints would reference stale vars).
+            *env = env.apply(&checker.subst);
             let scheme = env.generalize(&final_ty);
             env.insert(name.name.clone(), scheme);
             Ok(())
@@ -84,7 +88,8 @@ fn check_decl(
 
             let value_ty = checker.infer(value, env)?;
             if let Some(ann) = ty {
-                let ann_ty = checker.type_expr_to_type(&ann.node, env);
+                let mut scope = HashMap::new();
+                let ann_ty = checker.type_expr_to_type_scoped(&ann.node, env, Some(&mut scope));
                 // unify(expected, found): annotation is the expected type; value is what we got.
                 // Span points at the value (the wrong thing); enrich with the annotation span.
                 unify::unify_with_subst(&ann_ty, &value_ty, &mut checker.subst, value.span)
@@ -92,12 +97,13 @@ fn check_decl(
             }
 
             if let Some(existing) = existing_scheme {
-                let existing_ty = checker.instantiate(&existing);
+                let existing_ty = checker.instantiate(&existing, decl.span);
                 unify::unify_with_subst(&value_ty, &existing_ty, &mut checker.subst, decl.span)?;
             }
 
             if let Pattern::Var(ident) = &pattern.node {
                 let final_ty = checker.finalize(&value_ty);
+                *env = env.apply(&checker.subst);
                 let scheme = env.generalize(&final_ty);
                 env.insert(ident.name.clone(), scheme);
             }
@@ -278,11 +284,12 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
         fn_ty = Type::fun(param_ty, fn_ty);
     }
     if let Some(existing) = existing_scheme {
-        let existing_ty = checker.instantiate(&existing);
+        let existing_ty = checker.instantiate(&existing, fn_decl.name.span);
         unify::unify_with_subst(&fn_ty, &existing_ty, &mut checker.subst, fn_decl.name.span)?;
     }
 
     let final_ty = checker.finalize(&fn_ty);
+    *env = env.apply(&checker.subst);
     let scheme = env.generalize(&final_ty);
     env.insert(fn_name.clone(), scheme);
 
@@ -365,7 +372,9 @@ fn register_type_constructors(
                 field_types.push((f.name.name.clone(), field_ty));
             }
 
-            checker.registry.register_record(&name.name, &field_types);
+            checker
+                .registry
+                .register_record(&name.name, type_params.clone(), &field_types);
         }
         TypeBody::Alias(ty) => {
             let body_ty = checker.type_expr_to_type_scoped(&ty.node, env, Some(&mut param_scope));

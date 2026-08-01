@@ -113,6 +113,16 @@ pub enum TypeError {
         span: Span,
     },
 
+    #[error("or-pattern alternatives must bind the same names")]
+    #[diagnostic(
+        code(ivy::types::or_pattern_binding_mismatch),
+        help("each side of `pat1 | pat2` must bind the same set of identifiers")
+    )]
+    OrPatternBindingMismatch {
+        #[label("alternatives bind different names")]
+        span: Span,
+    },
+
     #[error("non-exhaustive patterns, missing: {}", missing.join(", "))]
     #[diagnostic(
         code(ivy::types::non_exhaustive),
@@ -220,6 +230,7 @@ impl TypeError {
             | TypeError::UndefinedField { span, .. }
             | TypeError::NotIndexable { span, .. }
             | TypeError::PatternMismatch { span, .. }
+            | TypeError::OrPatternBindingMismatch { span, .. }
             | TypeError::NonExhaustive { span, .. }
             | TypeError::DuplicateDefinition { span, .. }
             | TypeError::AnnotationMismatch { span, .. }
