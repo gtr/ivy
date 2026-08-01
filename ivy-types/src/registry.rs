@@ -14,10 +14,19 @@ pub struct ConstructorInfo {
 /// Information about a record field.
 #[derive(Debug, Clone)]
 pub struct RecordFieldInfo {
-    /// The field name.
+    /// The field name
     pub name: String,
-    /// The field type.
+    /// The field type. May reference type parameters from the enclosing record
     pub ty: crate::Type,
+}
+
+/// Information about a record type definition
+#[derive(Debug, Clone)]
+pub struct RecordInfo {
+    /// The record's type parameters: `[a, b]` for `type Pair<a, b>`
+    pub params: Vec<crate::TypeVar>,
+    /// The record's fields, in declaration order
+    pub fields: Vec<RecordFieldInfo>,
 }
 
 /// Information about a type alias
@@ -41,8 +50,8 @@ pub struct TypeRegistry {
     /// Maps constructor name -> constructor info
     constructor_info: HashMap<String, ConstructorInfo>,
 
-    /// Maps record type name -> list of fields (in declaration order)
-    records: HashMap<String, Vec<RecordFieldInfo>>,
+    /// Maps record type name -> info (params + fields, in declaration order)
+    records: HashMap<String, RecordInfo>,
 
     /// Maps type alias name -> alias info
     aliases: HashMap<String, AliasInfo>,
@@ -63,7 +72,7 @@ impl TypeRegistry {
         registry
     }
 
-    /// Register a sum type with its variants.
+    /// Register a sum type with its variants
     pub fn register_sum_type(&mut self, type_name: &str, variants: &[(&str, usize)]) {
         let mut ctor_names = Vec::with_capacity(variants.len());
 
@@ -81,7 +90,7 @@ impl TypeRegistry {
         self.constructors.insert(type_name.to_string(), ctor_names);
     }
 
-    /// Register a sum type from parsed variants.
+    /// Register a sum type from parsed variants
     pub fn register_from_variants(&mut self, type_name: &str, variants: &[crate::VariantInfo]) {
         let mut ctor_names = Vec::with_capacity(variants.len());
 
@@ -115,8 +124,8 @@ impl TypeRegistry {
         self.constructors.get(type_name).map(Vec::len).unwrap_or(0)
     }
 
-    /// Register a record type with its fields.
-    pub fn register_record(&mut self, type_name: &str, fields: &[(String, crate::Type)]) {
+    /// Register a record type with its parameters and fields
+    pub fn register_record(&mut self, type_name: &str, params: Vec<crate::TypeVar>, fields: &[(String, crate::Type)]) {
         let field_infos: Vec<RecordFieldInfo> = fields
             .iter()
             .map(|(name, ty)| RecordFieldInfo {
@@ -124,11 +133,21 @@ impl TypeRegistry {
                 ty: ty.clone(),
             })
             .collect();
-        self.records.insert(type_name.to_string(), field_infos);
+        self.records.insert(
+            type_name.to_string(),
+            RecordInfo {
+                params,
+                fields: field_infos,
+            },
+        );
+    }
+
+    pub fn get_record(&self, type_name: &str) -> Option<&RecordInfo> {
+        self.records.get(type_name)
     }
 
     pub fn get_record_fields(&self, type_name: &str) -> Option<&[RecordFieldInfo]> {
-        self.records.get(type_name).map(Vec::as_slice)
+        self.records.get(type_name).map(|r| r.fields.as_slice())
     }
 
     pub fn is_record_type(&self, type_name: &str) -> bool {

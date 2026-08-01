@@ -64,6 +64,7 @@ impl Subst {
         }
         Scheme {
             vars: scheme.vars.clone(),
+            constraints: scheme.constraints.clone(),
             ty: filtered.apply(&scheme.ty),
         }
     }

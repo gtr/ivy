@@ -237,11 +237,33 @@ impl fmt::Display for Type {
     }
 }
 
-/// A type scheme (polymorphic type): forall a b. a -> b -> a
+/// A trait constraint: `Show a` means "type `a` must implement `Show`".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraitConstraint {
+    pub trait_name: String,
+    pub type_args: Vec<Type>,
+}
+
+impl fmt::Display for TraitConstraint {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}<", self.trait_name)?;
+        for (i, ty) in self.type_args.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{}", ty)?;
+        }
+        write!(f, ">")
+    }
+}
+
+/// A type scheme (polymorphic type): forall a b. C => a -> b -> a
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Scheme {
     /// Bound (quantified) type variables
     pub vars: Vec<TypeVar>,
+    /// Trait constraints carried by this scheme.
+    pub constraints: Vec<TraitConstraint>,
     /// The underlying type
     pub ty: Type,
 }
@@ -249,12 +271,25 @@ pub struct Scheme {
 impl Scheme {
     /// Create a monomorphic scheme
     pub fn mono(ty: Type) -> Scheme {
-        Scheme { vars: vec![], ty }
+        Scheme {
+            vars: vec![],
+            constraints: vec![],
+            ty,
+        }
     }
 
-    /// Create a polymorphic scheme
+    /// Create a polymorphic scheme without constraints
     pub fn poly(vars: Vec<TypeVar>, ty: Type) -> Scheme {
-        Scheme { vars, ty }
+        Scheme {
+            vars,
+            constraints: vec![],
+            ty,
+        }
+    }
+
+    /// Create a polymorphic scheme with constraints
+    pub fn poly_with_constraints(vars: Vec<TypeVar>, constraints: Vec<TraitConstraint>, ty: Type) -> Scheme {
+        Scheme { vars, constraints, ty }
     }
 
     /// Collect free type variables (not bound by this scheme)

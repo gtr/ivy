@@ -2,6 +2,11 @@ use crate::subst::Subst;
 use crate::types::{Scheme, Type, TypeVar};
 use std::collections::{HashMap, HashSet};
 
+/// Builtin schemes use canonical bound vars in this range. Anything below this
+/// is reserved for the user's `TypeVarGen` to produce fresh vars without
+/// colliding with un-instantiated builtin schemes still in scope.
+const BUILTIN_VAR_OFFSET: u32 = 1_000_000;
+
 /// A type environment mapping names to type schemes
 #[derive(Debug, Clone)]
 pub struct TypeEnv {
@@ -21,11 +26,18 @@ impl TypeEnv {
     }
 
     /// Create a type environment with built-in types and functions
+    ///
+    /// Builtin schemes use canonical bound variables in a high-numbered range
+    /// (`BUILTIN_VAR_OFFSET..`) so they're disjoint from any fresh vars a
+    /// `TypeVarGen` will produce starting at 0. Schemes are always instantiated
+    /// with truly fresh vars before unification so these canonical IDs only
+    /// ever appear inside un-instantiated schemes.
+    ///
+    /// TODO(gtr): fix repeated built-ins in different places
     pub fn with_builtins() -> TypeEnv {
         let mut env = TypeEnv::new();
-
-        let a = TypeVar(1000);
-        let b = TypeVar(1001);
+        let a = TypeVar(BUILTIN_VAR_OFFSET);
+        let b = TypeVar(BUILTIN_VAR_OFFSET + 1);
 
         // ========================================================================
         // True builtins (always available, user-facing)
@@ -399,17 +411,28 @@ impl TypeVarGen {
         Type::Var(self.fresh())
     }
 
-    /// Instantiate a type scheme with fresh type variables
-    pub fn instantiate(&mut self, scheme: &Scheme) -> Type {
+    /// Instantiate a type scheme with fresh type variables, returning the
+    /// instantiated type along with the constraints carried by the scheme
+    /// (with the same fresh-var substitution applied).
+    pub fn instantiate(&mut self, scheme: &Scheme) -> (Type, Vec<crate::TraitConstraint>) {
         if scheme.vars.is_empty() {
-            return scheme.ty.clone();
+            return (scheme.ty.clone(), scheme.constraints.clone());
         }
 
         let mut subst = Subst::new();
         for var in &scheme.vars {
             subst.bind(*var, self.fresh_type());
         }
-        subst.apply(&scheme.ty)
+        let ty = subst.apply(&scheme.ty);
+        let constraints = scheme
+            .constraints
+            .iter()
+            .map(|c| crate::TraitConstraint {
+                trait_name: c.trait_name.clone(),
+                type_args: c.type_args.iter().map(|t| subst.apply(t)).collect(),
+            })
+            .collect();
+        (ty, constraints)
     }
 }
 
@@ -492,8 +515,8 @@ mod tests {
 
         let scheme = Scheme::poly(vec![a], Type::fun(Type::Var(a), Type::Var(a)));
 
-        let t1 = gen.instantiate(&scheme);
-        let t2 = gen.instantiate(&scheme);
+        let (t1, _) = gen.instantiate(&scheme);
+        let (t2, _) = gen.instantiate(&scheme);
 
         assert_ne!(t1, t2);
 

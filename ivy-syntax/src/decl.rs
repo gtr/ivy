@@ -40,8 +40,12 @@ pub enum Decl {
     Trait {
         is_pub: bool,
         name: Ident,
-        param: Ident,
+        /// Type parameters. TODO(gtr): For now exactly one (single-parameter typeclasses).
+        /// The type checker rejects `len() != 1`. The `Vec` shape is forward-compat for
+        /// multi-parameter typeclasses.
+        params: Vec<Ident>,
         items: Vec<TraitItem>,
+        span: Span,
     },
 
     /// Implementation: `impl Show for Int { ... }`
@@ -50,6 +54,7 @@ pub enum Decl {
         for_type: Spanned<TypeExpr>,
         where_clause: Vec<Constraint>,
         methods: Vec<Spanned<FnDecl>>,
+        span: Span,
     },
 
     /// Let binding (top-level): `let x = 42;`
@@ -177,16 +182,16 @@ pub enum TraitItem {
     DefaultImpl(FnDecl),
 }
 
-/// Type constraint: Show<a>
+/// Type constraint: `Show<a>` or `Show<List<a>>`
 #[derive(Debug, Clone)]
 pub struct Constraint {
     pub trait_name: Ident,
-    pub type_arg: Ident,
+    pub type_arg: Spanned<TypeExpr>,
     pub span: Span,
 }
 
 impl Constraint {
-    pub fn new(trait_name: Ident, type_arg: Ident, span: Span) -> Self {
+    pub fn new(trait_name: Ident, type_arg: Spanned<TypeExpr>, span: Span) -> Self {
         Self {
             trait_name,
             type_arg,

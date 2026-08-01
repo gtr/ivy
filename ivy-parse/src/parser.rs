@@ -343,12 +343,16 @@ impl<'a> Parser<'a> {
         Ok(TypeBody::Record(fields))
     }
 
-    /// Parse trait declaration: trait Show<a> { ... }
+    /// Parse trait declaration: `trait Show<a> { ... }`
     fn parse_trait_decl(&mut self, is_pub: bool) -> ParseResult<Decl> {
+        let start = self.current().span.start;
         self.expect(TokenKind::Trait)?;
         let name = self.parse_type_ident()?;
         self.expect(TokenKind::Lt)?;
-        let param = self.parse_ident()?;
+        let mut params = vec![self.parse_ident()?];
+        while self.match_token(TokenKind::Comma).is_some() {
+            params.push(self.parse_ident()?);
+        }
         self.expect(TokenKind::Gt)?;
         self.expect(TokenKind::LBrace)?;
 
@@ -359,12 +363,14 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(TokenKind::RBrace)?;
+        let span = self.span_from(start);
 
         Ok(Decl::Trait {
             is_pub,
             name,
-            param,
+            params,
             items,
+            span,
         })
     }
 
@@ -482,6 +488,7 @@ impl<'a> Parser<'a> {
 
     /// Parse impl declaration: impl Trait for Type { ... }
     fn parse_impl_decl(&mut self) -> ParseResult<Decl> {
+        let start = self.current().span.start;
         self.expect(TokenKind::Impl)?;
         let trait_name = self.parse_type_ident()?;
         self.expect(TokenKind::For)?;
@@ -491,12 +498,12 @@ impl<'a> Parser<'a> {
         let where_clause = if self.match_token(TokenKind::Where).is_some() {
             let mut constraints = Vec::new();
             loop {
-                let start = self.current().span.start;
+                let constraint_start = self.current().span.start;
                 let trait_name = self.parse_type_ident()?;
                 self.expect(TokenKind::Lt)?;
-                let type_arg = self.parse_ident_any()?;
+                let type_arg = self.parse_type_expr()?;
                 self.expect(TokenKind::Gt)?;
-                let span = self.span_from(start);
+                let span = self.span_from(constraint_start);
                 constraints.push(Constraint::new(trait_name, type_arg, span));
 
                 if self.match_token(TokenKind::Comma).is_none() {
@@ -517,12 +524,14 @@ impl<'a> Parser<'a> {
         }
 
         self.expect(TokenKind::RBrace)?;
+        let span = self.span_from(start);
 
         Ok(Decl::Impl {
             trait_name,
             for_type,
             where_clause,
             methods,
+            span,
         })
     }
 

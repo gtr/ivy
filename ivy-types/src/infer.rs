@@ -11,7 +11,7 @@ use crate::error::{TypeError, TypeResult};
 use crate::exhaustiveness;
 use crate::registry::{RecordFieldInfo, TypeRegistry};
 use crate::subst::Subst;
-use crate::types::{Scheme, Type, TypeVar};
+use crate::types::{Scheme, TraitConstraint, Type, TypeVar};
 use crate::unify::unify_with_subst;
 use ivy_syntax::{
     expr::{Expr, MatchArm, Param},
@@ -27,12 +27,17 @@ use std::collections::{HashMap, HashSet};
 pub struct TypeChecker {
     /// Type variable generator
     gen: TypeVarGen,
-    /// Current substitution (accumulates constraints)
+    /// Current substitution (accumulates type-equality constraints)
     pub subst: Subst,
     /// Type registry for exhaustiveness checking
     pub registry: TypeRegistry,
     /// Modules currently being loaded (for cycle detection)
     pub loaded_modules: HashSet<String>,
+    /// Pending trait constraints, with the span of where each was introduced.
+    /// Populated by typeclass instantiation in T-102; partitioned at decl
+    /// boundaries to discharge ground constraints, attach polymorphic ones to
+    /// the scheme being generalized, or defer to outer scope.
+    pub constraints: Vec<(TraitConstraint, Span)>,
 }
 
 impl TypeChecker {
@@ -43,6 +48,7 @@ impl TypeChecker {
             subst: Subst::new(),
             registry: TypeRegistry::with_builtins(),
             loaded_modules: HashSet::new(),
+            constraints: Vec::new(),
         }
     }
 
@@ -55,7 +61,10 @@ impl TypeChecker {
             Expr::Var(ident) => {
                 let name = &ident.name;
                 match env.get(name) {
-                    Some(scheme) => Ok(self.gen.instantiate(scheme)),
+                    Some(scheme) => {
+                        let scheme = scheme.clone();
+                        Ok(self.instantiate(&scheme, span))
+                    }
                     None => Err(TypeError::undefined_variable(name, span)),
                 }
             }
@@ -193,16 +202,7 @@ impl TypeChecker {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 unify_with_subst(&left_ty, &right_ty, &mut self.subst, span)?;
-
-                let resolved = self.subst.apply(&left_ty);
-                match resolved {
-                    Type::Int | Type::Float => Ok(resolved),
-                    Type::Var(_) => {
-                        unify_with_subst(&resolved, &Type::Int, &mut self.subst, span)?;
-                        Ok(Type::Int)
-                    }
-                    _ => Err(TypeError::mismatch(Type::Int, resolved, span)),
-                }
+                self.default_numeric_to_int(&left_ty, span)
             }
 
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
@@ -246,17 +246,7 @@ impl TypeChecker {
 
         match op {
             // Negation: Int -> Int or Float -> Float
-            UnaryOp::Neg => {
-                let resolved = self.subst.apply(&operand_ty);
-                match resolved {
-                    Type::Int | Type::Float => Ok(resolved),
-                    Type::Var(_) => {
-                        unify_with_subst(&resolved, &Type::Int, &mut self.subst, span)?;
-                        Ok(Type::Int)
-                    }
-                    _ => Err(TypeError::mismatch(Type::Int, resolved, span)),
-                }
-            }
+            UnaryOp::Neg => self.default_numeric_to_int(&operand_ty, span),
             // Not: Bool -> Bool
             UnaryOp::Not => {
                 unify_with_subst(&operand_ty, &Type::Bool, &mut self.subst, operand.span)?;
@@ -276,8 +266,10 @@ impl TypeChecker {
         let value_ty = self.infer(value, env)?;
 
         if let Some(ann) = ty_ann {
-            let ann_ty = self.type_expr_to_type(&ann.node, env);
-            unify_with_subst(&value_ty, &ann_ty, &mut self.subst, ann.span)?;
+            let mut scope = HashMap::new();
+            let ann_ty = self.type_expr_to_type_scoped(&ann.node, env, Some(&mut scope));
+            unify_with_subst(&ann_ty, &value_ty, &mut self.subst, value.span)
+                .map_err(|e| crate::add_expected_span(e, ann.span))?;
         }
 
         match &pattern.node {
@@ -367,13 +359,17 @@ impl TypeChecker {
         body: &Spanned<Expr>,
         env: &TypeEnv,
     ) -> TypeResult<Type> {
-        // Generate types for parameters
+        // Generate types for parameters. The scope is shared across all
+        // param annotations and the return annotation so that occurrences of
+        // the same lowercase type var (`a` in `fn (x: a, y: a)`) refer to the
+        // same TypeVar.
         let mut param_types = Vec::new();
         let mut bindings = Vec::new();
+        let mut type_var_scope: HashMap<String, Type> = HashMap::new();
 
         for param in params {
             let ty = if let Some(ann) = &param.ty {
-                self.type_expr_to_type(&ann.node, env)
+                self.type_expr_to_type_scoped(&ann.node, env, Some(&mut type_var_scope))
             } else {
                 self.gen.fresh_type()
             };
@@ -390,8 +386,9 @@ impl TypeChecker {
         let body_ty = self.infer(body, &body_env)?;
 
         if let Some(ann) = return_ty {
-            let ann_ty = self.type_expr_to_type(&ann.node, env);
-            unify_with_subst(&body_ty, &ann_ty, &mut self.subst, ann.span)?;
+            let ann_ty = self.type_expr_to_type_scoped(&ann.node, env, Some(&mut type_var_scope));
+            unify_with_subst(&ann_ty, &body_ty, &mut self.subst, body.span)
+                .map_err(|e| crate::add_expected_span(e, ann.span))?;
         }
 
         let mut result = body_ty;
@@ -452,7 +449,8 @@ impl TypeChecker {
         if let Expr::Var(ident) = &object.node {
             let module_name = &ident.name;
             if let Some(scheme) = env.get_module_export(module_name, field) {
-                return Ok(self.gen.instantiate(scheme));
+                let scheme = scheme.clone();
+                return Ok(self.instantiate(&scheme, span));
             }
             if env.is_module(module_name) {
                 return Err(TypeError::undefined_field(module_name, field, span));
@@ -524,20 +522,24 @@ impl TypeChecker {
         let mut last_ty = Type::Unit;
 
         for expr in body {
-            last_ty = self.infer(expr, &current_env)?;
+            match &expr.node {
+                Expr::Let { pattern, value, ty, .. } => {
+                    let value_ty = self.infer(value, &current_env)?;
+                    if let Some(ann) = ty {
+                        let mut scope = HashMap::new();
+                        let ann_ty = self.type_expr_to_type_scoped(&ann.node, &current_env, Some(&mut scope));
+                        unify_with_subst(&ann_ty, &value_ty, &mut self.subst, value.span)
+                            .map_err(|e| crate::add_expected_span(e, ann.span))?;
+                    }
 
-            // If it's a let binding, extend the environment
-            if let Expr::Let { pattern, value, ty, .. } = &expr.node {
-                let value_ty = self.infer(value, &current_env)?;
-                if let Some(ann) = ty {
-                    let ann_ty = self.type_expr_to_type(&ann.node, &current_env);
-                    unify_with_subst(&value_ty, &ann_ty, &mut self.subst, ann.span)?;
+                    let bindings = self.infer_pattern(pattern, &value_ty, &current_env)?;
+                    for (name, scheme) in bindings {
+                        current_env.insert(name, scheme);
+                    }
+                    last_ty = Type::Unit;
                 }
-
-                // Collect bindings from pattern (handles tuples, etc.)
-                let bindings = self.infer_pattern(pattern, &value_ty, &current_env)?;
-                for (name, scheme) in bindings {
-                    current_env.insert(name, scheme);
+                _ => {
+                    last_ty = self.infer(expr, &current_env)?;
                 }
             }
         }
@@ -661,7 +663,8 @@ impl TypeChecker {
             Pattern::Constructor { name, args } => {
                 // Look up constructor in environment
                 if let Some(scheme) = env.get(&name.name) {
-                    let ctor_ty = self.instantiate(scheme);
+                    let scheme = scheme.clone();
+                    let ctor_ty = self.instantiate(&scheme, span);
 
                     // The constructor should be a function type (for constructors with args)
                     // or a plain type (for nullary constructors like None)
@@ -703,24 +706,75 @@ impl TypeChecker {
             }
 
             Pattern::Record { name, fields } => {
-                for field in fields {
-                    let field_ty = self.gen.fresh_type();
-                    if let Some(pat) = &field.pattern {
-                        self.collect_pattern_bindings(pat, &field_ty, bindings, env)?;
-                    } else {
-                        bindings.push((field.name.name.clone(), Scheme::mono(field_ty)));
+                // look up the record in the registry so each field pattern is
+                // checked against the actual declared field type
+                let record_info = self.registry.get_record(&name.name).cloned();
+                if let Some(info) = record_info {
+                    // allocate fresh vars for the record's type parameters and
+                    // build a substitution to instantiate field types
+                    let fresh_params: Vec<Type> = info.params.iter().map(|_| self.gen.fresh_type()).collect();
+                    let mut param_subst: HashMap<TypeVar, Type> = HashMap::new();
+                    for (p, fresh) in info.params.iter().zip(fresh_params.iter()) {
+                        param_subst.insert(*p, fresh.clone());
                     }
+
+                    // Unify the scrutinee with the named record type.
+                    let head_ty = if fresh_params.is_empty() {
+                        Type::named(&name.name)
+                    } else {
+                        Type::named_with(&name.name, fresh_params.clone())
+                    };
+                    unify_with_subst(&head_ty, &expected, &mut self.subst, span)?;
+
+                    for field in fields {
+                        let declared = info
+                            .fields
+                            .iter()
+                            .find(|f| f.name == field.name.name)
+                            .ok_or_else(|| TypeError::undefined_field(&name.name, &field.name.name, field.span))?;
+                        let field_ty = substitute_type(&declared.ty, &param_subst);
+                        if let Some(pat) = &field.pattern {
+                            self.collect_pattern_bindings(pat, &field_ty, bindings, env)?;
+                        } else {
+                            bindings.push((field.name.name.clone(), Scheme::mono(field_ty)));
+                        }
+                    }
+                    Ok(())
+                } else {
+                    // Unknown record type: fall back to fresh vars (preserves
+                    // earlier behavior for structurally-typed records).
+                    for field in fields {
+                        let field_ty = self.gen.fresh_type();
+                        if let Some(pat) = &field.pattern {
+                            self.collect_pattern_bindings(pat, &field_ty, bindings, env)?;
+                        } else {
+                            bindings.push((field.name.name.clone(), Scheme::mono(field_ty)));
+                        }
+                    }
+                    Ok(())
                 }
-                let _ = name;
-                Ok(())
             }
 
             Pattern::Or { left, right } => {
-                // Both sides must produce same bindings with same types
+                // Both sides must bind the same names with unifiable types
                 let mut left_bindings = Vec::new();
                 let mut right_bindings = Vec::new();
                 self.collect_pattern_bindings(left, &expected, &mut left_bindings, env)?;
                 self.collect_pattern_bindings(right, &expected, &mut right_bindings, env)?;
+
+                let left_names: HashSet<&str> = left_bindings.iter().map(|(n, _)| n.as_str()).collect();
+                let right_names: HashSet<&str> = right_bindings.iter().map(|(n, _)| n.as_str()).collect();
+                if left_names != right_names {
+                    return Err(TypeError::OrPatternBindingMismatch { span });
+                }
+
+                for (lname, lscheme) in &left_bindings {
+                    let (_, rscheme) = right_bindings
+                        .iter()
+                        .find(|(rname, _)| rname == lname)
+                        .expect("name-set equality just verified");
+                    unify_with_subst(&lscheme.ty, &rscheme.ty, &mut self.subst, span)?;
+                }
                 bindings.extend(left_bindings);
                 Ok(())
             }
@@ -733,6 +787,21 @@ impl TypeChecker {
         self.collect_pattern_bindings(pattern, expected, &mut bindings, env)
     }
 
+    /// If `ty` resolves to a type variable, default it to `Int`. Used for
+    /// arithmetic and negation operators today; T-102 will replace this with a
+    /// `Num` constraint emission, deferring the default to generalization time.
+    fn default_numeric_to_int(&mut self, ty: &Type, span: Span) -> TypeResult<Type> {
+        let resolved = self.subst.apply(ty);
+        match resolved {
+            Type::Int | Type::Float => Ok(resolved),
+            Type::Var(_) => {
+                unify_with_subst(&resolved, &Type::Int, &mut self.subst, span)?;
+                Ok(Type::Int)
+            }
+            _ => Err(TypeError::mismatch(Type::Int, resolved, span)),
+        }
+    }
+
     /// Generate a fresh type variable.
     pub fn fresh_type(&mut self) -> Type {
         self.gen.fresh_type()
@@ -743,9 +812,16 @@ impl TypeChecker {
         self.gen.fresh()
     }
 
-    /// Instantiate a type scheme with fresh type variables.
-    pub fn instantiate(&mut self, scheme: &Scheme) -> Type {
-        self.gen.instantiate(scheme)
+    /// Instantiate a type scheme with fresh type variables. The scheme's
+    /// constraints (if any) are pushed onto `self.constraints` with the
+    /// supplied span. When typeclass dispatch lands in T-102, this is where
+    /// constraint accumulation flows from.
+    pub fn instantiate(&mut self, scheme: &Scheme, span: Span) -> Type {
+        let (ty, cs) = self.gen.instantiate(scheme);
+        for c in cs {
+            self.constraints.push((c, span));
+        }
+        ty
     }
 
     /// If `name` is a registered alias, expand it by substituting `args` for the
@@ -758,8 +834,6 @@ impl TypeChecker {
         } else if args.len() == info.params.len() {
             info.params.iter().copied().zip(args.iter().cloned()).collect()
         } else {
-            // Arity mismatch — leave unexpanded; the caller will produce a more
-            // specific error elsewhere.
             return None;
         };
         Some(substitute_type(&info.body, &mapping))
@@ -793,8 +867,8 @@ impl TypeChecker {
                             // Registered user-defined type. Construct the named type directly,
                             // even if a constructor of the same name exists in `env`.
                             Type::Named(name.clone(), vec![])
-                        } else if let Some(scheme) = env.get(name) {
-                            self.instantiate(scheme)
+                        } else if let Some(scheme) = env.get(name).cloned() {
+                            self.instantiate(&scheme, ident.span)
                         } else if let Some(ref mut sc) = scope {
                             // If we have a scope and name looks like a type variable,
                             // use consistent type variables
@@ -1068,5 +1142,35 @@ mod tests {
                     let lat = Latitude(45.0); \
                     let raw = match lat with | Latitude(f) -> f end;";
         assert!(check_program(code).is_ok());
+    }
+
+    // annotation type-var scope is shared
+    #[test]
+    fn test_lambda_type_var_scope_is_consistent() {
+        let code = "let f: a -> a = fn (x) => 5; let r = f(\"hi\");";
+        assert!(check_program(code).is_err());
+    }
+
+    // record patterns must use the registry
+    #[test]
+    fn test_record_pattern_uses_registry() {
+        let code = "type Person = { name: String, age: Int }; \
+                    fn f(p) => match p with | Person { age: a } -> a + \"oops\" end;";
+        assert!(check_program(code).is_err());
+    }
+
+    // or-patterns must bind matching name sets
+    #[test]
+    fn test_or_pattern_requires_matching_bindings() {
+        let code = "let r = match Some(1) with | Some(x) | None -> x end;";
+        assert!(check_program(code).is_err());
+    }
+
+    // or-pattern bindings must unify across sides
+    #[test]
+    fn test_or_pattern_unifies_binding_types() {
+        let code = "type Either = | L(Int) | R(String); \
+                    fn f(e) => match e with | L(x) | R(x) -> x end;";
+        assert!(check_program(code).is_err());
     }
 }
