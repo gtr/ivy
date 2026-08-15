@@ -1,5 +1,7 @@
 //! Type registry for tracking type definitions.
 
+use ivy_syntax::decl::FnDecl;
+use ivy_syntax::Span;
 use std::collections::HashMap;
 
 /// Information about a constructor.
@@ -38,6 +40,29 @@ pub struct AliasInfo {
     pub body: crate::Type,
 }
 
+/// Information about a trait decl
+#[derive(Debug, Clone)]
+pub struct TraitInfo {
+    pub name: String,
+    pub param: crate::TypeVar,
+    pub methods: HashMap<String, crate::Scheme>,
+    pub default_impls: HashMap<String, FnDecl>,
+    pub span: Span,
+}
+
+/// Information about a single impl
+#[derive(Debug, Clone)]
+pub struct ImplInfo {
+    pub trait_name: String,
+    /// Canonicalized impl head
+    pub head: crate::Type,
+    /// Free vars introduced by this impl (the `a` in `impl Show for Option<a>`)
+    pub head_vars: Vec<crate::TypeVar>,
+    /// Where-clause constraints with type args using `head_vars`
+    pub where_constraints: Vec<crate::TraitConstraint>,
+    pub span: Span,
+}
+
 /// Registry of type definitions.
 ///
 /// Maintains mappings from type names -> constructors and vice versa
@@ -55,6 +80,12 @@ pub struct TypeRegistry {
 
     /// Maps type alias name -> alias info
     aliases: HashMap<String, AliasInfo>,
+
+    /// Maps trait name -> trait info
+    traits: HashMap<String, TraitInfo>,
+
+    /// Maps trait name -> list of impls (multiple impls per trait, one per type)
+    impls: HashMap<String, Vec<ImplInfo>>,
 }
 
 impl TypeRegistry {
@@ -160,6 +191,35 @@ impl TypeRegistry {
 
     pub fn get_alias(&self, type_name: &str) -> Option<&AliasInfo> {
         self.aliases.get(type_name)
+    }
+
+    pub fn register_trait(&mut self, info: TraitInfo) {
+        self.traits.insert(info.name.clone(), info);
+    }
+
+    pub fn get_trait(&self, name: &str) -> Option<&TraitInfo> {
+        self.traits.get(name)
+    }
+
+    pub fn is_trait(&self, name: &str) -> bool {
+        self.traits.contains_key(name)
+    }
+
+    pub fn register_impl(&mut self, info: ImplInfo) {
+        self.impls.entry(info.trait_name.clone()).or_default().push(info);
+    }
+
+    pub fn get_impls(&self, trait_name: &str) -> &[ImplInfo] {
+        match self.impls.get(trait_name) {
+            Some(v) => v.as_slice(),
+            None => &[],
+        }
+    }
+
+    pub fn all_impls(&self) -> impl Iterator<Item = (&str, &ImplInfo)> {
+        self.impls
+            .iter()
+            .flat_map(|(name, impls)| impls.iter().map(move |i| (name.as_str(), i)))
     }
 }
 
