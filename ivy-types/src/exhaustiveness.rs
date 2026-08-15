@@ -263,6 +263,7 @@ fn matches_record(pattern: &Pattern, record_name: &str) -> bool {
 mod tests {
     use super::*;
     use ivy_syntax::ast::Ident;
+    use ivy_syntax::lit::Literal;
     use ivy_syntax::Span;
 
     fn span() -> Span {
@@ -328,7 +329,7 @@ mod tests {
         let registry = TypeRegistry::with_builtins();
         let ty = Type::Bool;
 
-        let true_pattern = Pattern::Lit(ivy_syntax::lit::Literal::Bool(true));
+        let true_pattern = Pattern::Lit(Literal::Bool(true));
         let patterns: Vec<&Pattern> = vec![&true_pattern];
 
         let missing = find_missing_patterns(&ty, &patterns, &registry);
@@ -340,8 +341,8 @@ mod tests {
         let registry = TypeRegistry::with_builtins();
         let ty = Type::Bool;
 
-        let true_pattern = Pattern::Lit(ivy_syntax::lit::Literal::Bool(true));
-        let false_pattern = Pattern::Lit(ivy_syntax::lit::Literal::Bool(false));
+        let true_pattern = Pattern::Lit(Literal::Bool(true));
+        let false_pattern = Pattern::Lit(Literal::Bool(false));
         let patterns: Vec<&Pattern> = vec![&true_pattern, &false_pattern];
 
         let missing = find_missing_patterns(&ty, &patterns, &registry);

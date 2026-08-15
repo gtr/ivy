@@ -3,6 +3,7 @@
 //! much of the standard library + built-in functions in ivy. For now, we'll
 //! label this as tech-debt and move on. A proper refactor *will* be done.
 
+use std::cmp::Ordering;
 use std::fs;
 use std::io::{self, Write};
 use std::path::Path;
@@ -12,25 +13,135 @@ use crate::value::{vec_to_list, BuiltinFn, Value};
 use ivy_syntax::Span;
 use rand::Rng;
 
-/// Print without newline.
 pub static BUILTIN_PRINT: BuiltinFn = BuiltinFn {
     name: "__print",
     arity: 1,
     func: builtin_print,
 };
 
-/// Print with newline.
 pub static BUILTIN_PRINTLN: BuiltinFn = BuiltinFn {
     name: "__println",
     arity: 1,
     func: builtin_println,
 };
 
-/// Convert int to string.
 pub static BUILTIN_INT_TO_STRING: BuiltinFn = BuiltinFn {
     name: "__intToString",
     arity: 1,
     func: builtin_int_to_string,
+};
+
+pub static BUILTIN_CHAR_TO_STRING: BuiltinFn = BuiltinFn {
+    name: "__charToString",
+    arity: 1,
+    func: |args| match &args[0] {
+        Value::Char(c) => Ok(Value::String(c.to_string())),
+        v => Err(EvalError::TypeError {
+            expected: "Char".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    },
+};
+
+pub static BUILTIN_INT_EQ: BuiltinFn = BuiltinFn {
+    name: "__intEq",
+    arity: 2,
+    func: |args| match (&args[0], &args[1]) {
+        (Value::Int(a), Value::Int(b)) => Ok(Value::Bool(a == b)),
+        _ => Err(EvalError::TypeError {
+            expected: "Int, Int".to_string(),
+            found: format!("{}, {}", args[0].type_name(), args[1].type_name()),
+            span: Span::default(),
+        }),
+    },
+};
+
+pub static BUILTIN_FLOAT_EQ: BuiltinFn = BuiltinFn {
+    name: "__floatEq",
+    arity: 2,
+    func: |args| match (&args[0], &args[1]) {
+        (Value::Float(a), Value::Float(b)) => Ok(Value::Bool(a == b)),
+        _ => Err(EvalError::TypeError {
+            expected: "Float, Float".to_string(),
+            found: format!("{}, {}", args[0].type_name(), args[1].type_name()),
+            span: Span::default(),
+        }),
+    },
+};
+
+pub static BUILTIN_STR_EQ: BuiltinFn = BuiltinFn {
+    name: "__strEq",
+    arity: 2,
+    func: |args| match (&args[0], &args[1]) {
+        (Value::String(a), Value::String(b)) => Ok(Value::Bool(a == b)),
+        _ => Err(EvalError::TypeError {
+            expected: "String, String".to_string(),
+            found: format!("{}, {}", args[0].type_name(), args[1].type_name()),
+            span: Span::default(),
+        }),
+    },
+};
+
+fn ordering_value(name: &str) -> Value {
+    Value::Constructor {
+        type_name: "Ordering".to_string(),
+        variant: name.to_string(),
+        fields: vec![],
+    }
+}
+
+pub static BUILTIN_INT_COMPARE: BuiltinFn = BuiltinFn {
+    name: "__intCompare",
+    arity: 2,
+    func: |args| match (&args[0], &args[1]) {
+        (Value::Int(a), Value::Int(b)) => Ok(ordering_value(match a.cmp(b) {
+            Ordering::Less => "Less",
+            Ordering::Equal => "Equal",
+            Ordering::Greater => "Greater",
+        })),
+        _ => Err(EvalError::TypeError {
+            expected: "Int, Int".to_string(),
+            found: format!("{}, {}", args[0].type_name(), args[1].type_name()),
+            span: Span::default(),
+        }),
+    },
+};
+
+pub static BUILTIN_FLOAT_COMPARE: BuiltinFn = BuiltinFn {
+    name: "__floatCompare",
+    arity: 2,
+    func: |args| match (&args[0], &args[1]) {
+        (Value::Float(a), Value::Float(b)) => Ok(ordering_value(if a < b {
+            "Less"
+        } else if a > b {
+            "Greater"
+        } else {
+            "Equal"
+        })),
+        _ => Err(EvalError::TypeError {
+            expected: "Float, Float".to_string(),
+            found: format!("{}, {}", args[0].type_name(), args[1].type_name()),
+            span: Span::default(),
+        }),
+    },
+};
+
+pub static BUILTIN_STR_COMPARE: BuiltinFn = BuiltinFn {
+    name: "__strCompare",
+    arity: 2,
+    func: |args| match (&args[0], &args[1]) {
+        (Value::String(a), Value::String(b)) => Ok(ordering_value(match a.cmp(b) {
+            Ordering::Less => "Less",
+            Ordering::Equal => "Equal",
+            Ordering::Greater => "Greater",
+        })),
+        _ => Err(EvalError::TypeError {
+            expected: "String, String".to_string(),
+            found: format!("{}, {}", args[0].type_name(), args[1].type_name()),
+            span: Span::default(),
+        }),
+    },
 };
 
 /// Read a line from stdin.

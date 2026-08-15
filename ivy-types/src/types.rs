@@ -1,5 +1,4 @@
-//! Type representation for Ivy.
-
+use crate::subst::Subst;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 
@@ -131,6 +130,62 @@ impl Type {
         }
     }
 
+    /// Two types "overlap" if there's an assignment of their free vars that makes them equal
+    pub fn overlaps(&self, other: &Type) -> bool {
+        let mut subst = HashMap::<TypeVar, Type>::new();
+        Self::overlaps_walk(self, other, &mut subst)
+    }
+
+    fn overlaps_walk(a: &Type, b: &Type, subst: &mut HashMap<TypeVar, Type>) -> bool {
+        let resolve = |t: &Type, subst: &HashMap<TypeVar, Type>| -> Type {
+            let mut current = t.clone();
+            while let Type::Var(v) = &current {
+                match subst.get(v) {
+                    Some(next) if next != &current => current = next.clone(),
+                    _ => break,
+                }
+            }
+            current
+        };
+        // TODO(gtr): pretty sure this is bad perf
+        let a = resolve(a, subst);
+        let b = resolve(b, subst);
+        match (&a, &b) {
+            (Type::Var(v1), Type::Var(v2)) if v1 == v2 => true,
+            (Type::Var(v), other) | (other, Type::Var(v)) => {
+                subst.insert(*v, other.clone());
+                true
+            }
+            (Type::Int, Type::Int)
+            | (Type::Float, Type::Float)
+            | (Type::Bool, Type::Bool)
+            | (Type::String, Type::String)
+            | (Type::Char, Type::Char)
+            | (Type::Unit, Type::Unit) => true,
+            (Type::Fun(p1, r1), Type::Fun(p2, r2)) => {
+                Self::overlaps_walk(p1, p2, subst) && Self::overlaps_walk(r1, r2, subst)
+            }
+            (Type::Tuple(xs), Type::Tuple(ys)) => {
+                xs.len() == ys.len() && xs.iter().zip(ys.iter()).all(|(x, y)| Self::overlaps_walk(x, y, subst))
+            }
+            (Type::List(x), Type::List(y)) => Self::overlaps_walk(x, y, subst),
+            (Type::Named(n1, a1), Type::Named(n2, a2)) => {
+                n1 == n2
+                    && a1.len() == a2.len()
+                    && a1.iter().zip(a2.iter()).all(|(x, y)| Self::overlaps_walk(x, y, subst))
+            }
+            (Type::Record(n1, f1), Type::Record(n2, f2)) => {
+                n1 == n2
+                    && f1.len() == f2.len()
+                    && f1
+                        .iter()
+                        .zip(f2.iter())
+                        .all(|((na, ta), (nb, tb))| na == nb && Self::overlaps_walk(ta, tb, subst))
+            }
+            _ => false,
+        }
+    }
+
     pub fn normalize(&self) -> Type {
         let mut mapping: HashMap<TypeVar, TypeVar> = HashMap::new();
         let mut next_id: u32 = 0;
@@ -237,11 +292,61 @@ impl fmt::Display for Type {
     }
 }
 
-/// A trait constraint: `Show a` means "type `a` must implement `Show`".
+/// A trait constraint: `Show a` means "type `a` must implement `Show`"
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraitConstraint {
     pub trait_name: String,
     pub type_args: Vec<Type>,
+}
+
+impl TraitConstraint {
+    pub fn covers(&self, other: &TraitConstraint) -> bool {
+        if self.trait_name != other.trait_name || self.type_args.len() != other.type_args.len() {
+            return false;
+        }
+        let mut bindings: HashMap<TypeVar, Type> = HashMap::new();
+        for (lhs, rhs) in self.type_args.iter().zip(other.type_args.iter()) {
+            if !match_one(lhs, rhs, &mut bindings) {
+                return false;
+            }
+        }
+        true
+    }
+}
+
+fn match_one(pattern: &Type, target: &Type, bindings: &mut HashMap<TypeVar, Type>) -> bool {
+    match (pattern, target) {
+        (Type::Int, Type::Int)
+        | (Type::Float, Type::Float)
+        | (Type::Bool, Type::Bool)
+        | (Type::String, Type::String)
+        | (Type::Char, Type::Char)
+        | (Type::Unit, Type::Unit) => true,
+        (Type::Var(v), _) => match bindings.get(v) {
+            Some(prev) => prev == target,
+            None => {
+                bindings.insert(*v, target.clone());
+                true
+            }
+        },
+        (Type::Fun(p1, r1), Type::Fun(p2, r2)) => match_one(p1, p2, bindings) && match_one(r1, r2, bindings),
+        (Type::Tuple(a), Type::Tuple(b)) => {
+            a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| match_one(x, y, bindings))
+        }
+        (Type::List(a), Type::List(b)) => match_one(a, b, bindings),
+        (Type::Named(n1, a1), Type::Named(n2, a2)) => {
+            n1 == n2 && a1.len() == a2.len() && a1.iter().zip(a2.iter()).all(|(x, y)| match_one(x, y, bindings))
+        }
+        (Type::Record(n1, f1), Type::Record(n2, f2)) => {
+            n1 == n2
+                && f1.len() == f2.len()
+                && f1
+                    .iter()
+                    .zip(f2.iter())
+                    .all(|((na, ta), (nb, tb))| na == nb && match_one(ta, tb, bindings))
+        }
+        _ => false,
+    }
 }
 
 impl fmt::Display for TraitConstraint {
@@ -299,6 +404,29 @@ impl Scheme {
             vars.remove(v);
         }
         vars
+    }
+
+    /// Replace this scheme's bound vars with fresh ones produced by `next_var`
+    ///
+    /// Returns the instantiated type and the freshened constraints
+    pub fn instantiate<F: FnMut() -> Type>(&self, mut next_var: F) -> (Type, Vec<TraitConstraint>) {
+        if self.vars.is_empty() {
+            return (self.ty.clone(), self.constraints.clone());
+        }
+
+        let mapping: HashMap<TypeVar, Type> = self.vars.iter().map(|v| (*v, next_var())).collect();
+        let subst = Subst::from_mappings(mapping);
+        let ty = subst.apply(&self.ty);
+        let constraints = self
+            .constraints
+            .iter()
+            .map(|c| TraitConstraint {
+                trait_name: c.trait_name.clone(),
+                type_args: c.type_args.iter().map(|t| subst.apply(t)).collect(),
+            })
+            .collect();
+
+        (ty, constraints)
     }
 }
 

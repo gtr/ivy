@@ -87,7 +87,7 @@ mod value_tests {
         assert_eq!(Value::Unit.type_name(), "()");
         assert_eq!(Value::Bool(true).type_name(), "Bool");
         assert_eq!(Value::Int(42).type_name(), "Int");
-        assert_eq!(Value::Float(3.14).type_name(), "Float");
+        assert_eq!(Value::Float(2.5).type_name(), "Float");
         assert_eq!(Value::String("hello".to_string()).type_name(), "String");
         assert_eq!(Value::Char('a').type_name(), "Char");
         assert_eq!(
@@ -457,6 +457,64 @@ mod interpreter_tests {
         assert!(bindings.contains(&"myVar".to_string()));
         // Builtins should be filtered out
         assert!(!bindings.contains(&"print".to_string()));
+    }
+
+    fn eval_no_prelude(code: &str) -> Result<Value, String> {
+        let mut interp = Interpreter::with_builtins();
+        let program = ivy_parse::parse(code).map_err(|e| format!("{:?}", e))?;
+        interp.eval_program(&program).map_err(|e| format!("{:?}", e))
+    }
+
+    #[test]
+    fn test_trait_dispatch_int() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    show(42);";
+        assert!(matches!(eval_no_prelude(code), Ok(Value::String(ref s)) if s == "42"));
+    }
+
+    #[test]
+    fn test_trait_dispatch_bool() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Bool { fn show(true) => \"true\"; fn show(false) => \"false\"; } \
+                    show(true);";
+        assert!(matches!(eval_no_prelude(code), Ok(Value::String(ref s)) if s == "true"));
+    }
+
+    #[test]
+    fn test_trait_dispatch_recursive_through_polymorphic_impl() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    impl Show for Option<a> where Show<a> { \
+                        fn show(None) => \"None\"; \
+                        fn show(Some(x)) => \"Some(\" ++ show(x) ++ \")\"; \
+                    } \
+                    show(Some(Some(42)));";
+        assert!(matches!(eval_no_prelude(code), Ok(Value::String(ref s)) if s == "Some(Some(42))"));
+    }
+
+    #[test]
+    fn test_trait_dispatch_through_polymorphic_function() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    fn greet(x) => \"hi \" ++ show(x); \
+                    greet(7);";
+        assert!(matches!(eval_no_prelude(code), Ok(Value::String(ref s)) if s == "hi 7"));
+    }
+
+    #[test]
+    fn test_default_method_uses_trait_dispatch() {
+        let code = "trait Eq<a> { \
+                        fn eq(x: a, y: a): Bool; \
+                        fn neq(x: a, y: a): Bool => !(eq(x, y)); \
+                    } \
+                    impl Eq for Bool { \
+                        fn eq(true, true) => true; \
+                        fn eq(false, false) => true; \
+                        fn eq(_, _) => false; \
+                    } \
+                    neq(true, false);";
+        assert!(matches!(eval_no_prelude(code), Ok(Value::Bool(true))));
     }
 }
 

@@ -1,7 +1,3 @@
-//! Ivy CLI
-//! Command-line interface for the Ivy programming language. It's actually a REPL (read, print,
-//! evaluate, loop) to be fair. Also contains logic for errors and REPL commands.
-
 use std::env;
 use std::error::Error as StdError;
 use std::fs;
@@ -88,6 +84,8 @@ fn check_file(path: &str, source: &str) {
             let mut loader = ivy_parse::ModuleLoader::new(search_paths);
             let mut type_checker = ivy_types::TypeChecker::new();
             let mut type_env = ivy_types::TypeEnv::with_builtins();
+            let mut interp = Interpreter::with_builtins();
+            load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
 
             match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
                 Ok(()) => {
@@ -129,19 +127,17 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
                 let mut loader = ivy_parse::ModuleLoader::new(search_paths);
                 let mut type_checker = ivy_types::TypeChecker::new();
                 let mut type_env = ivy_types::TypeEnv::with_builtins();
+                let mut interp = Interpreter::with_builtins();
+                load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
 
                 match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
-                    Ok(()) => {
-                        let mut interp = Interpreter::new();
-
-                        match interp.eval_program_with_loader(&program, &mut loader) {
-                            Ok(_) => {}
-                            Err(e) => {
-                                print_eval_error(e, &source, path);
-                                process::exit(1);
-                            }
+                    Ok(()) => match interp.eval_program_with_loader(&program, &mut loader) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            print_eval_error(e, &source, path);
+                            process::exit(1);
                         }
-                    }
+                    },
                     Err(e) => {
                         print_type_error(e, &source, path);
                         process::exit(1);

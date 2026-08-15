@@ -1,8 +1,5 @@
-//! Substitution for type variables.
-
-use std::collections::HashMap;
-
-use crate::types::{Scheme, Type, TypeVar};
+use crate::types::{Scheme, TraitConstraint, Type, TypeVar};
+use std::collections::{HashMap, HashSet};
 
 /// A substitution mapping type variables to types.
 #[derive(Debug, Clone, Default)]
@@ -21,6 +18,11 @@ impl Subst {
     /// Bind a type variable to a type.
     pub fn bind(&mut self, var: TypeVar, ty: Type) {
         self.mappings.insert(var, ty);
+    }
+
+    /// Build a substitution from a `HashMap<TypeVar, Type>`
+    pub fn from_mappings(mappings: HashMap<TypeVar, Type>) -> Subst {
+        Subst { mappings }
     }
 
     /// Look up a type variable.
@@ -56,16 +58,51 @@ impl Subst {
         }
     }
 
-    /// Apply this substitution to a type scheme.
+    /// Apply this substitution to a type scheme. Bound vars are excluded from the substitution (a bound `a` in
+    /// `forall a. ...` isn't replaced even if the outer subst maps `a`)
     pub fn apply_scheme(&self, scheme: &Scheme) -> Scheme {
-        let mut filtered = self.clone();
-        for v in &scheme.vars {
-            filtered.mappings.remove(v);
-        }
+        let bound: HashSet<TypeVar> = scheme.vars.iter().copied().collect();
+        let apply = |ty: &Type| self.apply_excluding(ty, &bound);
         Scheme {
             vars: scheme.vars.clone(),
-            constraints: scheme.constraints.clone(),
-            ty: filtered.apply(&scheme.ty),
+            constraints: scheme
+                .constraints
+                .iter()
+                .map(|c| TraitConstraint {
+                    trait_name: c.trait_name.clone(),
+                    type_args: c.type_args.iter().map(&apply).collect(),
+                })
+                .collect(),
+            ty: apply(&scheme.ty),
+        }
+    }
+
+    /// Apply self to `ty`, treating any var in `bound` as opaque
+    fn apply_excluding(&self, ty: &Type, bound: &HashSet<TypeVar>) -> Type {
+        match ty {
+            Type::Int | Type::Float | Type::Bool | Type::String | Type::Char | Type::Unit => ty.clone(),
+            Type::Var(v) if bound.contains(v) => ty.clone(),
+            Type::Var(v) => match self.mappings.get(v) {
+                Some(bound_ty) => self.apply_excluding(bound_ty, bound),
+                None => ty.clone(),
+            },
+            Type::Fun(a, b) => Type::Fun(
+                Box::new(self.apply_excluding(a, bound)),
+                Box::new(self.apply_excluding(b, bound)),
+            ),
+            Type::Tuple(elems) => Type::Tuple(elems.iter().map(|e| self.apply_excluding(e, bound)).collect()),
+            Type::List(elem) => Type::List(Box::new(self.apply_excluding(elem, bound))),
+            Type::Named(name, args) => Type::Named(
+                name.clone(),
+                args.iter().map(|a| self.apply_excluding(a, bound)).collect(),
+            ),
+            Type::Record(name, fields) => Type::Record(
+                name.clone(),
+                fields
+                    .iter()
+                    .map(|(n, ty)| (n.clone(), self.apply_excluding(ty, bound)))
+                    .collect(),
+            ),
         }
     }
 

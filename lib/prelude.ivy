@@ -97,8 +97,6 @@ trait Ord<a> {
 -- Trait Implementations for Primitives
 -- =============================================================================
 
--- Note: These are actually implemented in Rust, but shown here for reference.
-
 impl Show for Bool {
   fn show(true) => "true";
   fn show(false) => "false";
@@ -138,6 +136,38 @@ impl Ord for Bool {
   fn compare(false, true) => Less;
   fn compare(true, false) => Greater;
   fn compare(_, _) => Equal;
+}
+
+impl Eq for Int {
+  fn eq(x, y) => __intEq(x, y);
+}
+
+impl Ord for Int {
+  fn compare(x, y) => __intCompare(x, y);
+}
+
+impl Eq for String {
+  fn eq(x, y) => __strEq(x, y);
+}
+
+impl Ord for String {
+  fn compare(x, y) => __strCompare(x, y);
+}
+
+impl Eq for Float {
+  fn eq(x, y) => __floatEq(x, y);
+}
+
+impl Ord for Float {
+  fn compare(x, y) => __floatCompare(x, y);
+}
+
+impl Show for Float {
+  fn show(f) => __floatToString(f);
+}
+
+impl Show for Char {
+  fn show(c) => __charToString(c);
 }
 
 impl Eq for Option<a> where Eq<a> {

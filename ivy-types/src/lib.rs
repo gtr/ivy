@@ -12,11 +12,13 @@ pub use env::{TypeEnv, TypeVarGen};
 pub use error::{TypeError, TypeErrorKind, TypeResult};
 pub use infer::TypeChecker;
 use ivy_parse::ModuleLoader;
-use ivy_syntax::decl::{Decl, FnBody, FnDecl, ImportKind, TypeBody};
+use ivy_syntax::decl::{Constraint, Decl, FnBody, FnDecl, ImportKind, TraitItem, TypeBody};
 use ivy_syntax::pattern::Pattern;
-use ivy_syntax::{collect_public_names, Ident, Program, Spanned};
-pub use registry::{TypeRegistry, VariantInfo};
-use std::collections::HashMap;
+use ivy_syntax::types::TypeExpr;
+use ivy_syntax::{collect_public_names, Ident, Program, Span, Spanned};
+pub use registry::{ImplInfo, TraitInfo, TypeRegistry, VariantInfo};
+use std::collections::{HashMap, HashSet};
+use std::mem;
 pub use subst::Subst;
 pub use types::{Scheme, TraitConstraint, Type, TypeVar};
 pub use unify::unify;
@@ -104,8 +106,23 @@ fn check_decl(
             if let Pattern::Var(ident) = &pattern.node {
                 let final_ty = checker.finalize(&value_ty);
                 *env = env.apply(&checker.subst);
-                let scheme = env.generalize(&final_ty);
+                let env_vars = env.free_vars();
+                let ty_vars: Vec<TypeVar> = final_ty.free_vars().difference(&env_vars).copied().collect();
+                let (attached, deferred) = discharge_at_boundary(checker, &ty_vars, &env_vars)?;
+                checker.constraints = deferred;
+                let scheme = if ty_vars.is_empty() && attached.is_empty() {
+                    Scheme::mono(final_ty)
+                } else {
+                    Scheme::poly_with_constraints(ty_vars, attached, final_ty)
+                };
                 env.insert(ident.name.clone(), scheme);
+            } else {
+                let env_vars = env.free_vars();
+                let (attached, deferred) = discharge_at_boundary(checker, &[], &env_vars)?;
+                if !attached.is_empty() {
+                    return Err(TypeError::ambiguous_constraint(attached[0].clone(), decl.span));
+                }
+                checker.constraints = deferred;
             }
             Ok(())
         }
@@ -115,9 +132,422 @@ fn check_decl(
             Ok(())
         }
         Decl::Import { path, kind } => check_import(checker, env, loader, path, kind),
-        // TODO(gtr): modules, traits, impl, etc.
+        Decl::Trait {
+            name,
+            params,
+            items,
+            span,
+            ..
+        } => check_trait_decl(checker, env, name, params, items, *span),
+        Decl::Impl {
+            trait_name,
+            for_type,
+            where_clause,
+            methods,
+            span,
+        } => check_impl_decl(checker, env, trait_name, for_type, where_clause, methods, *span),
+        // TODO(gtr): modules...
         _ => Ok(()),
     }
+}
+
+fn check_trait_decl(
+    checker: &mut TypeChecker,
+    env: &mut TypeEnv,
+    name: &Ident,
+    params: &[Ident],
+    items: &[TraitItem],
+    span: Span,
+) -> TypeResult<()> {
+    if params.len() != 1 {
+        return Err(TypeError::multi_param_trait_unsupported(&name.name, params.len(), span));
+    }
+    let param_name = params[0].name.clone();
+    let param_var = checker.fresh_var();
+    let param_ty = Type::Var(param_var);
+
+    let trait_constraint = TraitConstraint {
+        trait_name: name.name.clone(),
+        type_args: vec![param_ty.clone()],
+    };
+
+    let mut method_schemes: HashMap<String, Scheme> = HashMap::new();
+    let mut default_impls: HashMap<String, FnDecl> = HashMap::new();
+
+    for item in items {
+        match item {
+            TraitItem::Signature { name: m_name, ty, .. } => {
+                let mut scope: HashMap<String, Type> = HashMap::new();
+                scope.insert(param_name.clone(), param_ty.clone());
+                let method_ty = checker.type_expr_to_type_scoped(&ty.node, env, Some(&mut scope));
+                let scheme = Scheme::poly_with_constraints(vec![param_var], vec![trait_constraint.clone()], method_ty);
+                method_schemes.insert(m_name.name.clone(), scheme);
+            }
+            TraitItem::DefaultImpl(fn_decl) => {
+                let mut scope: HashMap<String, Type> = HashMap::new();
+                scope.insert(param_name.clone(), param_ty.clone());
+                let mut method_ty = match &fn_decl.return_ty {
+                    Some(rt) => checker.type_expr_to_type_scoped(&rt.node, env, Some(&mut scope)),
+                    None => checker.fresh_type(),
+                };
+                for param in fn_decl.params.iter().rev() {
+                    let p_ty = match &param.ty {
+                        Some(ann) => checker.type_expr_to_type_scoped(&ann.node, env, Some(&mut scope)),
+                        None => checker.fresh_type(),
+                    };
+                    method_ty = Type::fun(p_ty, method_ty);
+                }
+                let scheme = Scheme::poly_with_constraints(vec![param_var], vec![trait_constraint.clone()], method_ty);
+                method_schemes.insert(fn_decl.name.name.clone(), scheme);
+                default_impls.insert(fn_decl.name.name.clone(), fn_decl.clone());
+            }
+        }
+    }
+
+    for (m_name, scheme) in &method_schemes {
+        env.insert(m_name.clone(), scheme.clone());
+    }
+
+    let info = TraitInfo {
+        name: name.name.clone(),
+        param: param_var,
+        methods: method_schemes,
+        default_impls,
+        span,
+    };
+    checker.registry.register_trait(info);
+    Ok(())
+}
+
+fn check_impl_decl(
+    checker: &mut TypeChecker,
+    env: &mut TypeEnv,
+    trait_name: &Ident,
+    for_type: &Spanned<TypeExpr>,
+    where_clause: &[Constraint],
+    methods: &[Spanned<FnDecl>],
+    span: Span,
+) -> TypeResult<()> {
+    let trait_info = match checker.registry.get_trait(&trait_name.name) {
+        Some(info) => info.clone(),
+        None => return Err(TypeError::unknown_trait(&trait_name.name, trait_name.span)),
+    };
+
+    let mut head_scope: HashMap<String, Type> = HashMap::new();
+    let head = checker.type_expr_to_type_scoped(&for_type.node, env, Some(&mut head_scope));
+
+    if matches!(head, Type::Var(_)) {
+        return Err(TypeError::blanket_impl_unsupported(&trait_name.name, for_type.span));
+    }
+
+    let mut where_constraints = Vec::with_capacity(where_clause.len());
+    for c in where_clause {
+        let arg_ty = checker.type_expr_to_type_scoped(&c.type_arg.node, env, Some(&mut head_scope));
+        if !checker.registry.is_trait(&c.trait_name.name) {
+            return Err(TypeError::unknown_trait(&c.trait_name.name, c.trait_name.span));
+        }
+        where_constraints.push(TraitConstraint {
+            trait_name: c.trait_name.name.clone(),
+            type_args: vec![arg_ty],
+        });
+    }
+
+    let existing_heads: Vec<(Type, Span)> = checker
+        .registry
+        .get_impls(&trait_name.name)
+        .iter()
+        .map(|i| (i.head.clone(), i.span))
+        .collect();
+    for (existing_head, existing_span) in &existing_heads {
+        if heads_overlap(checker, &head, existing_head) {
+            return Err(TypeError::overlapping_impls(
+                &trait_name.name,
+                head.normalize(),
+                existing_head.normalize(),
+                span,
+                *existing_span,
+            ));
+        }
+    }
+
+    let mut provided: HashSet<String> = HashSet::new();
+    for method in methods {
+        let m_name = &method.node.name.name;
+        let trait_method_scheme = trait_info
+            .methods
+            .get(m_name)
+            .ok_or_else(|| TypeError::unknown_method(&trait_name.name, m_name, method.node.name.span))?;
+
+        // TODO(gtr): the snapshot/restore below is skipped on early `?` returns but we should
+        // switch to a scope_guard pattern when error recovery is introduced
+        let prev_subst = checker.subst.clone();
+        let prev_constraints = mem::take(&mut checker.constraints);
+        let prior_assumed_len = checker.assumed_constraints.len();
+
+        let mut rename: HashMap<TypeVar, Type> = HashMap::new();
+        for v in head.free_vars() {
+            rename.insert(v, checker.fresh_type());
+        }
+        let method_head = substitute_type_in(&head, &rename);
+        let method_where: Vec<TraitConstraint> = where_constraints
+            .iter()
+            .map(|c| TraitConstraint {
+                trait_name: c.trait_name.clone(),
+                type_args: c.type_args.iter().map(|t| substitute_type_in(t, &rename)).collect(),
+            })
+            .collect();
+        for c in &method_where {
+            checker.assumed_constraints.push(c.clone());
+        }
+        checker.assumed_constraints.push(TraitConstraint {
+            trait_name: trait_name.name.clone(),
+            type_args: vec![method_head.clone()],
+        });
+
+        let mut specialize: HashMap<TypeVar, Type> = HashMap::new();
+        specialize.insert(trait_info.param, method_head.clone());
+        let expected_ty = substitute_type_in(&trait_method_scheme.ty, &specialize);
+
+        let actual_ty = check_impl_method(checker, env, &method.node)?;
+        unify::unify_with_subst(&expected_ty, &actual_ty, &mut checker.subst, method.node.name.span).map_err(|_| {
+            TypeError::method_signature_mismatch(
+                &trait_name.name,
+                m_name,
+                checker.finalize(&expected_ty),
+                checker.finalize(&actual_ty),
+                method.node.name.span,
+            )
+        })?;
+
+        let collected = mem::take(&mut checker.constraints);
+        for (c, c_span) in collected {
+            let resolved = TraitConstraint {
+                trait_name: c.trait_name,
+                type_args: c.type_args.iter().map(|t| checker.subst.apply(t)).collect(),
+            };
+            try_discharge(checker, &resolved, c_span)?;
+        }
+
+        checker.subst = prev_subst;
+        checker.constraints = prev_constraints;
+        checker.assumed_constraints.truncate(prior_assumed_len);
+
+        provided.insert(m_name.clone());
+    }
+
+    let mut trait_method_names: Vec<&String> = trait_info.methods.keys().collect();
+    trait_method_names.sort();
+    for m_name in trait_method_names {
+        if provided.contains(m_name) {
+            continue;
+        }
+        if !trait_info.default_impls.contains_key(m_name) {
+            return Err(TypeError::missing_method(&trait_name.name, m_name, span));
+        }
+    }
+
+    let head_vars = method_head_vars(&head);
+    let impl_info = ImplInfo {
+        trait_name: trait_name.name.clone(),
+        head,
+        head_vars,
+        where_constraints,
+        span,
+    };
+    checker.registry.register_impl(impl_info);
+    Ok(())
+}
+
+fn method_head_vars(head: &Type) -> Vec<TypeVar> {
+    let mut vars: Vec<TypeVar> = head.free_vars().into_iter().collect();
+    vars.sort_by_key(|v| v.0);
+    vars
+}
+
+/// Type-check a single impl method body
+///
+/// Returns its inferred function type
+fn check_impl_method(checker: &mut TypeChecker, env: &TypeEnv, fn_decl: &FnDecl) -> TypeResult<Type> {
+    let mut param_types = Vec::new();
+    let mut bindings = Vec::new();
+    let mut type_var_scope: HashMap<String, Type> = HashMap::new();
+
+    for param in &fn_decl.params {
+        let ty = match &param.ty {
+            Some(ann) => checker.type_expr_to_type_scoped(&ann.node, env, Some(&mut type_var_scope)),
+            None => checker.fresh_type(),
+        };
+        let pattern_bindings = checker.infer_pattern(&param.pattern, &ty, env)?;
+        bindings.extend(pattern_bindings);
+        param_types.push(ty);
+    }
+
+    let body_env = env.extend(bindings);
+    let body_ty = match &fn_decl.body {
+        FnBody::Expr(expr) => checker.infer(expr, &body_env)?,
+        FnBody::Guards(guards) => {
+            let mut result_ty = None;
+            for guard in guards {
+                let cond_ty = checker.infer(&guard.guard, &body_env)?;
+                unify::unify_with_subst(&cond_ty, &Type::Bool, &mut checker.subst, guard.guard.span)?;
+                let g_body_ty = checker.infer(&guard.body, &body_env)?;
+                match &result_ty {
+                    Some(t) => {
+                        unify::unify_with_subst(t, &g_body_ty, &mut checker.subst, guard.span)?;
+                    }
+                    None => result_ty = Some(g_body_ty),
+                }
+            }
+            result_ty.unwrap_or(Type::Unit)
+        }
+    };
+
+    if let Some(ann) = &fn_decl.return_ty {
+        let ann_ty = checker.type_expr_to_type_scoped(&ann.node, env, Some(&mut type_var_scope));
+        unify::unify_with_subst(&ann_ty, &body_ty, &mut checker.subst, fn_decl.span)?;
+    }
+
+    let mut fn_ty = body_ty;
+    for p in param_types.into_iter().rev() {
+        fn_ty = Type::fun(p, fn_ty);
+    }
+    Ok(fn_ty)
+}
+
+// TODO(gtr): a `seen: HashSet<(String, Type)>` cycle detector would catch circular impls more precisely
+const MAX_IMPL_RECURSION: usize = 64;
+
+fn find_impl(checker: &mut TypeChecker, constraint: &TraitConstraint) -> bool {
+    find_impl_at(checker, constraint, 0)
+}
+
+/// Search for an impl satisfying `constraint`
+///
+/// Returns true if we found it
+fn find_impl_at(checker: &mut TypeChecker, constraint: &TraitConstraint, depth: usize) -> bool {
+    if depth > MAX_IMPL_RECURSION {
+        return false;
+    }
+    let trait_name = constraint.trait_name.clone();
+    let Some(want) = constraint.type_args.first().cloned() else {
+        return false;
+    };
+    let impls: Vec<ImplInfo> = checker.registry.get_impls(&trait_name).to_vec();
+
+    for info in impls {
+        let mut fresh: HashMap<TypeVar, Type> = HashMap::new();
+        for v in &info.head_vars {
+            fresh.insert(*v, checker.fresh_type());
+        }
+        let head_ty = substitute_type_in(&info.head, &fresh);
+
+        let saved = checker.subst.clone();
+        if unify::unify_with_subst(&head_ty, &want, &mut checker.subst, Span::default()).is_err() {
+            checker.subst = saved;
+            continue;
+        }
+
+        let mut all_ok = true;
+        for c in &info.where_constraints {
+            let resolved = TraitConstraint {
+                trait_name: c.trait_name.clone(),
+                type_args: c
+                    .type_args
+                    .iter()
+                    .map(|t| checker.subst.apply(&substitute_type_in(t, &fresh)))
+                    .collect(),
+            };
+            if checker.assumed_constraints.iter().any(|a| a.covers(&resolved)) {
+                continue;
+            }
+            if !find_impl_at(checker, &resolved, depth + 1) {
+                all_ok = false;
+                break;
+            }
+        }
+        if all_ok {
+            return true;
+        }
+        checker.subst = saved;
+    }
+    false
+}
+
+fn substitute_type_in(ty: &Type, mapping: &HashMap<TypeVar, Type>) -> Type {
+    Subst::from_mappings(mapping.clone()).apply(ty)
+}
+
+/// Two impl heads "overlap" if some assignment unifies them. Both sides are alpha-renamed to fresh vars first so
+/// var-id collisions between separately
+fn heads_overlap(checker: &mut TypeChecker, h1: &Type, h2: &Type) -> bool {
+    freshen_with(checker, h1).overlaps(&freshen_with(checker, h2))
+}
+
+fn freshen_with(checker: &mut TypeChecker, ty: &Type) -> Type {
+    let mut mapping: HashMap<TypeVar, Type> = HashMap::new();
+    for v in ty.free_vars() {
+        mapping.insert(v, checker.fresh_type());
+    }
+    substitute_type_in(ty, &mapping)
+}
+
+/// Partition accumulated constraints at a decl boundary into:
+/// (a) constraints to attach to the scheme being generalized (mentioning vars in `generalized_vars`)
+/// (b) constraints to defer back to the outer scope (mentioning outer-scope vars)
+type DischargeOutcome = (Vec<TraitConstraint>, Vec<(TraitConstraint, Span)>);
+
+fn discharge_at_boundary(
+    checker: &mut TypeChecker,
+    generalized_vars: &[TypeVar],
+    env_vars: &HashSet<TypeVar>,
+) -> TypeResult<DischargeOutcome> {
+    let mut attached: Vec<TraitConstraint> = Vec::new();
+    let mut deferred: Vec<(TraitConstraint, Span)> = Vec::new();
+    let pending = mem::take(&mut checker.constraints);
+    let mut iter = pending.into_iter();
+
+    while let Some((c, span)) = iter.next() {
+        let resolved = TraitConstraint {
+            trait_name: c.trait_name,
+            type_args: c.type_args.iter().map(|t| checker.subst.apply(t)).collect(),
+        };
+        let free: HashSet<TypeVar> = resolved.type_args.iter().flat_map(Type::free_vars).collect();
+
+        let result = if free.is_empty() {
+            try_discharge(checker, &resolved, span).map(|_| ())
+        } else if free.iter().any(|v| generalized_vars.contains(v)) {
+            if !attached.iter().any(|c| c == &resolved) {
+                attached.push(resolved);
+            }
+            Ok(())
+        } else if free.iter().any(|v| env_vars.contains(v)) {
+            deferred.push((resolved, span));
+            Ok(())
+        } else {
+            Err(TypeError::ambiguous_constraint(resolved, span))
+        };
+
+        if let Err(e) = result {
+            checker.constraints = iter.collect();
+            return Err(e);
+        }
+    }
+
+    Ok((attached, deferred))
+}
+
+/// Try to discharge a ground (or assumed) constraint
+///
+/// Returns Ok if an assumed constraint matches or an impl is found, Err with `NoImplFound` otherwise
+fn try_discharge(checker: &mut TypeChecker, c: &TraitConstraint, span: Span) -> TypeResult<()> {
+    if checker.assumed_constraints.iter().any(|a| a.covers(c)) {
+        return Ok(());
+    }
+    if find_impl(checker, c) {
+        return Ok(());
+    }
+    let ty = c.type_args.first().cloned().unwrap_or(Type::Unit);
+    Err(TypeError::no_impl_found(&c.trait_name, ty.normalize(), span))
 }
 
 /// Type check an import declaration.
@@ -290,7 +720,15 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
 
     let final_ty = checker.finalize(&fn_ty);
     *env = env.apply(&checker.subst);
-    let scheme = env.generalize(&final_ty);
+    let env_vars = env.free_vars();
+    let ty_vars: Vec<TypeVar> = final_ty.free_vars().difference(&env_vars).copied().collect();
+    let (attached, deferred) = discharge_at_boundary(checker, &ty_vars, &env_vars)?;
+    checker.constraints = deferred;
+    let scheme = if ty_vars.is_empty() && attached.is_empty() {
+        Scheme::mono(final_ty)
+    } else {
+        Scheme::poly_with_constraints(ty_vars, attached, final_ty)
+    };
     env.insert(fn_name.clone(), scheme);
 
     Ok(())

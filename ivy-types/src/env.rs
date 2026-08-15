@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 /// Builtin schemes use canonical bound vars in this range. Anything below this
 /// is reserved for the user's `TypeVarGen` to produce fresh vars without
 /// colliding with un-instantiated builtin schemes still in scope.
-const BUILTIN_VAR_OFFSET: u32 = 1_000_000;
+pub const BUILTIN_VAR_OFFSET: u32 = 1_000_000;
 
 /// A type environment mapping names to type schemes
 #[derive(Debug, Clone)]
@@ -26,13 +26,6 @@ impl TypeEnv {
     }
 
     /// Create a type environment with built-in types and functions
-    ///
-    /// Builtin schemes use canonical bound variables in a high-numbered range
-    /// (`BUILTIN_VAR_OFFSET..`) so they're disjoint from any fresh vars a
-    /// `TypeVarGen` will produce starting at 0. Schemes are always instantiated
-    /// with truly fresh vars before unification so these canonical IDs only
-    /// ever appear inside un-instantiated schemes.
-    ///
     /// TODO(gtr): fix repeated built-ins in different places
     pub fn with_builtins() -> TypeEnv {
         let mut env = TypeEnv::new();
@@ -130,6 +123,47 @@ impl TypeEnv {
         env.insert(
             "__intToString".to_string(),
             Scheme::mono(Type::fun(Type::Int, Type::String)),
+        );
+
+        // __charToString: Char -> String
+        env.insert(
+            "__charToString".to_string(),
+            Scheme::mono(Type::fun(Type::Char, Type::String)),
+        );
+
+        // __intEq: Int -> Int -> Bool
+        env.insert(
+            "__intEq".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::Bool))),
+        );
+
+        // __floatEq: Float -> Float -> Bool
+        env.insert(
+            "__floatEq".to_string(),
+            Scheme::mono(Type::fun(Type::Float, Type::fun(Type::Float, Type::Bool))),
+        );
+
+        // __strEq: String -> String -> Bool
+        env.insert(
+            "__strEq".to_string(),
+            Scheme::mono(Type::fun(Type::String, Type::fun(Type::String, Type::Bool))),
+        );
+
+        // __intCompare / __floatCompare / __strCompare: a -> a -> Ordering
+        env.insert(
+            "__intCompare".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::fun(Type::Int, Type::named("Ordering")))),
+        );
+        env.insert(
+            "__floatCompare".to_string(),
+            Scheme::mono(Type::fun(Type::Float, Type::fun(Type::Float, Type::named("Ordering")))),
+        );
+        env.insert(
+            "__strCompare".to_string(),
+            Scheme::mono(Type::fun(
+                Type::String,
+                Type::fun(Type::String, Type::named("Ordering")),
+            )),
         );
 
         // __stringToInt: String -> Int (may fail at runtime)
@@ -411,28 +445,8 @@ impl TypeVarGen {
         Type::Var(self.fresh())
     }
 
-    /// Instantiate a type scheme with fresh type variables, returning the
-    /// instantiated type along with the constraints carried by the scheme
-    /// (with the same fresh-var substitution applied).
     pub fn instantiate(&mut self, scheme: &Scheme) -> (Type, Vec<crate::TraitConstraint>) {
-        if scheme.vars.is_empty() {
-            return (scheme.ty.clone(), scheme.constraints.clone());
-        }
-
-        let mut subst = Subst::new();
-        for var in &scheme.vars {
-            subst.bind(*var, self.fresh_type());
-        }
-        let ty = subst.apply(&scheme.ty);
-        let constraints = scheme
-            .constraints
-            .iter()
-            .map(|c| crate::TraitConstraint {
-                trait_name: c.trait_name.clone(),
-                type_args: c.type_args.iter().map(|t| subst.apply(t)).collect(),
-            })
-            .collect();
-        (ty, constraints)
+        scheme.instantiate(|| self.fresh_type())
     }
 }
 

@@ -1,4 +1,4 @@
-use crate::types::{Type, TypeVar};
+use crate::types::{TraitConstraint, Type, TypeVar};
 use ivy_syntax::Span;
 use miette::Diagnostic;
 use thiserror::Error;
@@ -213,6 +213,97 @@ pub enum TypeError {
         module_source: String,
         inner: Box<TypeError>,
     },
+
+    #[error("trait `{trait_name}` is not implemented for type `{ty}`")]
+    #[diagnostic(code(ivy::types::no_impl_found))]
+    NoImplFound {
+        trait_name: String,
+        ty: Type,
+        #[label("no `impl {trait_name} for {ty}` in scope")]
+        span: Span,
+    },
+
+    #[error("conflicting impls of trait `{trait_name}` for `{head1}` and `{head2}`")]
+    #[diagnostic(code(ivy::types::overlapping_impls))]
+    OverlappingImpls {
+        trait_name: String,
+        head1: Type,
+        head2: Type,
+        #[label(primary, "this impl overlaps with an earlier one")]
+        span: Span,
+        #[label("earlier impl is here")]
+        existing_span: Span,
+    },
+
+    #[error("ambiguous type for trait `{}`", constraint.trait_name)]
+    #[diagnostic(
+        code(ivy::types::ambiguous_constraint),
+        help("add a type annotation to disambiguate")
+    )]
+    AmbiguousConstraint {
+        constraint: TraitConstraint,
+        #[label("type variable in `{constraint}` cannot be inferred")]
+        span: Span,
+    },
+
+    #[error("unknown trait: `{name}`")]
+    #[diagnostic(code(ivy::types::unknown_trait))]
+    UnknownTrait {
+        name: String,
+        #[label("trait `{name}` is not defined")]
+        span: Span,
+    },
+
+    #[error("method `{method}` of trait `{trait_name}` has the wrong type: expected {expected}, found {found}")]
+    #[diagnostic(code(ivy::types::method_signature_mismatch))]
+    MethodSignatureMismatch {
+        trait_name: String,
+        method: String,
+        expected: Type,
+        found: Type,
+        #[label("expected {expected}, got {found}")]
+        span: Span,
+    },
+
+    #[error("trait `{trait_name}` has no method `{method}`")]
+    #[diagnostic(code(ivy::types::unknown_method))]
+    UnknownMethod {
+        trait_name: String,
+        method: String,
+        #[label("not a method of `{trait_name}`")]
+        span: Span,
+    },
+
+    #[error("impl of trait `{trait_name}` is missing method `{method}`")]
+    #[diagnostic(code(ivy::types::missing_method))]
+    MissingMethod {
+        trait_name: String,
+        method: String,
+        #[label("`{method}` not provided and trait has no default")]
+        span: Span,
+    },
+
+    #[error("multi-parameter typeclasses are not yet supported (trait `{name}` has {count} parameters)")]
+    #[diagnostic(code(ivy::types::multi_param_trait_unsupported))]
+    MultiParamTraitUnsupported {
+        name: String,
+        count: usize,
+        #[label("expected exactly 1 type parameter, got {count}")]
+        span: Span,
+    },
+
+    #[error("blanket impls of `{trait_name}` are not supported")]
+    #[diagnostic(
+        code(ivy::types::blanket_impl_unsupported),
+        help(
+            "`impl {trait_name} for a` cannot be dispatched at runtime; use a concrete head like `Int` or `Option<a>`"
+        )
+    )]
+    BlanketImplUnsupported {
+        trait_name: String,
+        #[label("`for` expects a concrete type, not a bare type variable")]
+        span: Span,
+    },
 }
 
 impl TypeError {
@@ -239,8 +330,93 @@ impl TypeError {
             | TypeError::ModuleNotFound { span, .. }
             | TypeError::CircularImport { span, .. }
             | TypeError::ModuleIOError { span, .. }
-            | TypeError::ModuleParseError { span, .. } => *span,
+            | TypeError::ModuleParseError { span, .. }
+            | TypeError::NoImplFound { span, .. }
+            | TypeError::OverlappingImpls { span, .. }
+            | TypeError::AmbiguousConstraint { span, .. }
+            | TypeError::UnknownTrait { span, .. }
+            | TypeError::MethodSignatureMismatch { span, .. }
+            | TypeError::UnknownMethod { span, .. }
+            | TypeError::MissingMethod { span, .. }
+            | TypeError::MultiParamTraitUnsupported { span, .. }
+            | TypeError::BlanketImplUnsupported { span, .. } => *span,
             TypeError::ModuleTypeError { inner, .. } => inner.span(),
+        }
+    }
+
+    pub fn no_impl_found(trait_name: &str, ty: Type, span: Span) -> TypeError {
+        TypeError::NoImplFound {
+            trait_name: trait_name.to_string(),
+            ty,
+            span,
+        }
+    }
+
+    pub fn unknown_trait(name: &str, span: Span) -> TypeError {
+        TypeError::UnknownTrait {
+            name: name.to_string(),
+            span,
+        }
+    }
+
+    pub fn unknown_method(trait_name: &str, method: &str, span: Span) -> TypeError {
+        TypeError::UnknownMethod {
+            trait_name: trait_name.to_string(),
+            method: method.to_string(),
+            span,
+        }
+    }
+
+    pub fn missing_method(trait_name: &str, method: &str, span: Span) -> TypeError {
+        TypeError::MissingMethod {
+            trait_name: trait_name.to_string(),
+            method: method.to_string(),
+            span,
+        }
+    }
+
+    pub fn ambiguous_constraint(constraint: TraitConstraint, span: Span) -> TypeError {
+        TypeError::AmbiguousConstraint { constraint, span }
+    }
+
+    pub fn overlapping_impls(trait_name: &str, head1: Type, head2: Type, span: Span, existing_span: Span) -> TypeError {
+        TypeError::OverlappingImpls {
+            trait_name: trait_name.to_string(),
+            head1,
+            head2,
+            span,
+            existing_span,
+        }
+    }
+
+    pub fn method_signature_mismatch(
+        trait_name: &str,
+        method: &str,
+        expected: Type,
+        found: Type,
+        span: Span,
+    ) -> TypeError {
+        TypeError::MethodSignatureMismatch {
+            trait_name: trait_name.to_string(),
+            method: method.to_string(),
+            expected,
+            found,
+            span,
+        }
+    }
+
+    pub fn multi_param_trait_unsupported(name: &str, count: usize, span: Span) -> TypeError {
+        TypeError::MultiParamTraitUnsupported {
+            name: name.to_string(),
+            count,
+            span,
+        }
+    }
+
+    pub fn blanket_impl_unsupported(trait_name: &str, span: Span) -> TypeError {
+        TypeError::BlanketImplUnsupported {
+            trait_name: trait_name.to_string(),
+            span,
         }
     }
 

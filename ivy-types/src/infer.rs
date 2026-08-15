@@ -6,10 +6,10 @@
 //! 3. Apply the resulting substitution to get final types
 //!
 //! Reference: <https://smunix.github.io/dev.stephendiehl.com/fun/006_hindley_milner.html>
-use crate::env::{TypeEnv, TypeVarGen};
+use crate::env::{TypeEnv, TypeVarGen, BUILTIN_VAR_OFFSET};
 use crate::error::{TypeError, TypeResult};
 use crate::exhaustiveness;
-use crate::registry::{RecordFieldInfo, TypeRegistry};
+use crate::registry::{ImplInfo, RecordFieldInfo, TraitInfo, TypeRegistry};
 use crate::subst::Subst;
 use crate::types::{Scheme, TraitConstraint, Type, TypeVar};
 use crate::unify::unify_with_subst;
@@ -23,32 +23,50 @@ use ivy_syntax::{
 };
 use std::collections::{HashMap, HashSet};
 
-/// Type checker state
 pub struct TypeChecker {
-    /// Type variable generator
     gen: TypeVarGen,
-    /// Current substitution (accumulates type-equality constraints)
     pub subst: Subst,
-    /// Type registry for exhaustiveness checking
     pub registry: TypeRegistry,
-    /// Modules currently being loaded (for cycle detection)
     pub loaded_modules: HashSet<String>,
-    /// Pending trait constraints, with the span of where each was introduced.
-    /// Populated by typeclass instantiation in T-102; partitioned at decl
-    /// boundaries to discharge ground constraints, attach polymorphic ones to
-    /// the scheme being generalized, or defer to outer scope.
+    /// Pending trait constraints (with introduction span), partitioned at decl boundaries
     pub constraints: Vec<(TraitConstraint, Span)>,
+    /// Constraints assumed in the current context (where-clauses, signatures)
+    pub assumed_constraints: Vec<TraitConstraint>,
 }
 
 impl TypeChecker {
     /// Create a new type checker.
     pub fn new() -> TypeChecker {
-        TypeChecker {
+        let mut checker = TypeChecker {
             gen: TypeVarGen::new(),
             subst: Subst::new(),
             registry: TypeRegistry::with_builtins(),
             loaded_modules: HashSet::new(),
             constraints: Vec::new(),
+            assumed_constraints: Vec::new(),
+        };
+        checker.register_builtin_traits();
+        checker
+    }
+
+    /// Auto-register internal traits like `Num`
+    fn register_builtin_traits(&mut self) {
+        let num_param = TypeVar(BUILTIN_VAR_OFFSET);
+        self.registry.register_trait(TraitInfo {
+            name: "Num".to_string(),
+            param: num_param,
+            methods: HashMap::new(),
+            default_impls: HashMap::new(),
+            span: Span::default(),
+        });
+        for ty in [Type::Int, Type::Float] {
+            self.registry.register_impl(ImplInfo {
+                trait_name: "Num".to_string(),
+                head: ty,
+                head_vars: vec![],
+                where_constraints: vec![],
+                span: Span::default(),
+            });
         }
     }
 
@@ -202,7 +220,7 @@ impl TypeChecker {
         match op {
             BinOp::Add | BinOp::Sub | BinOp::Mul | BinOp::Div | BinOp::Mod => {
                 unify_with_subst(&left_ty, &right_ty, &mut self.subst, span)?;
-                self.default_numeric_to_int(&left_ty, span)
+                self.infer_numeric_op(&left_ty, span)
             }
 
             BinOp::Eq | BinOp::Ne | BinOp::Lt | BinOp::Le | BinOp::Gt | BinOp::Ge => {
@@ -246,7 +264,7 @@ impl TypeChecker {
 
         match op {
             // Negation: Int -> Int or Float -> Float
-            UnaryOp::Neg => self.default_numeric_to_int(&operand_ty, span),
+            UnaryOp::Neg => self.infer_numeric_op(&operand_ty, span),
             // Not: Bool -> Bool
             UnaryOp::Not => {
                 unify_with_subst(&operand_ty, &Type::Bool, &mut self.subst, operand.span)?;
@@ -787,35 +805,33 @@ impl TypeChecker {
         self.collect_pattern_bindings(pattern, expected, &mut bindings, env)
     }
 
-    /// If `ty` resolves to a type variable, default it to `Int`. Used for
-    /// arithmetic and negation operators today; T-102 will replace this with a
-    /// `Num` constraint emission, deferring the default to generalization time.
-    fn default_numeric_to_int(&mut self, ty: &Type, span: Span) -> TypeResult<Type> {
+    /// Emit a `Num` constraint on `ty` so that `fn double(x) => x + x` generalizes
+    /// to `forall a. Num a => a -> a` instead of defaulting `a` to `Int`
+    fn infer_numeric_op(&mut self, ty: &Type, span: Span) -> TypeResult<Type> {
         let resolved = self.subst.apply(ty);
-        match resolved {
-            Type::Int | Type::Float => Ok(resolved),
-            Type::Var(_) => {
-                unify_with_subst(&resolved, &Type::Int, &mut self.subst, span)?;
-                Ok(Type::Int)
+        match &resolved {
+            Type::Int | Type::Float | Type::Var(_) => {
+                self.constraints.push((
+                    TraitConstraint {
+                        trait_name: "Num".to_string(),
+                        type_args: vec![resolved.clone()],
+                    },
+                    span,
+                ));
+                Ok(resolved)
             }
             _ => Err(TypeError::mismatch(Type::Int, resolved, span)),
         }
     }
 
-    /// Generate a fresh type variable.
     pub fn fresh_type(&mut self) -> Type {
         self.gen.fresh_type()
     }
 
-    /// Generate a fresh type variable ID.
     pub fn fresh_var(&mut self) -> TypeVar {
         self.gen.fresh()
     }
 
-    /// Instantiate a type scheme with fresh type variables. The scheme's
-    /// constraints (if any) are pushed onto `self.constraints` with the
-    /// supplied span. When typeclass dispatch lands in T-102, this is where
-    /// constraint accumulation flows from.
     pub fn instantiate(&mut self, scheme: &Scheme, span: Span) -> Type {
         let (ty, cs) = self.gen.instantiate(scheme);
         for c in cs {
@@ -953,25 +969,8 @@ impl Default for TypeChecker {
     }
 }
 
-/// Substitute type variables in `ty` according to `mapping`.
 fn substitute_type(ty: &Type, mapping: &HashMap<TypeVar, Type>) -> Type {
-    match ty {
-        Type::Var(v) => mapping.get(v).cloned().unwrap_or_else(|| ty.clone()),
-        Type::Fun(p, r) => Type::fun(substitute_type(p, mapping), substitute_type(r, mapping)),
-        Type::Tuple(elems) => Type::Tuple(elems.iter().map(|t| substitute_type(t, mapping)).collect()),
-        Type::List(e) => Type::list(substitute_type(e, mapping)),
-        Type::Named(name, args) => {
-            Type::Named(name.clone(), args.iter().map(|t| substitute_type(t, mapping)).collect())
-        }
-        Type::Record(name, fields) => Type::Record(
-            name.clone(),
-            fields
-                .iter()
-                .map(|(n, t)| (n.clone(), substitute_type(t, mapping)))
-                .collect(),
-        ),
-        _ => ty.clone(),
-    }
+    Subst::from_mappings(mapping.clone()).apply(ty)
 }
 
 /// Count parameters in a function type chain. Returns None if the head is
@@ -1172,5 +1171,121 @@ mod tests {
         let code = "type Either = | L(Int) | R(String); \
                     fn f(e) => match e with | L(x) | R(x) -> x end;";
         assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_trait_decl_registers_methods() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    let r = show(42);";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_no_impl_found_grounds_error() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    let r = show(true);";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_constraint_propagation_through_polymorphic_fn() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    fn greet(x) => show(x); \
+                    let r = greet(42);";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_constraint_propagation_unknown_impl() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    fn greet(x) => show(x); \
+                    let r = greet(true);";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_unknown_trait_in_impl() {
+        let code = "impl NoSuch for Int { fn foo(x) => x; }";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_overlapping_impls_rejected() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    impl Show for Int { fn show(n) => \"oops\"; }";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_multi_param_trait_rejected() {
+        let code = "trait Bad<a, b> { fn x(a: a, b: b): a; }";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_impl_with_where_clause() {
+        let code = "trait Show<a> { fn show(x: a): String; } \
+                    impl Show for Int { fn show(n) => __intToString(n); } \
+                    impl Show for Option<a> where Show<a> { \
+                        fn show(None) => \"None\"; \
+                        fn show(Some(x)) => __intToString(0); \
+                    } \
+                    let r = show(Some(5));";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_num_constraint_via_arithmetic_int() {
+        let code = "fn double(x) => x + x; let r = double(3);";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_num_constraint_via_arithmetic_float() {
+        let code = "fn double(x) => x + x; let r = double(3.0);";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_num_constraint_rejects_non_numeric() {
+        let code = "fn double(x) => x + x; let r = double(\"hi\");";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_blanket_impl_rejected() {
+        let code = "trait T<a> { fn t(x: a): Bool; } \
+                    impl T for a { fn t(_) => true; }";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_impl_method_can_call_sibling_trait_method() {
+        let code = "type Foo = | Bar; \
+                    trait MyEq<a> { \
+                        fn myeq(x: a, y: a): Bool; \
+                        fn myneq(x: a, y: a): Bool; \
+                    } \
+                    impl MyEq for Foo { \
+                        fn myeq(Bar, Bar) => true; \
+                        fn myneq(x, y) => !myeq(x, y); \
+                    }";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_default_impl_method() {
+        let code = "trait Eq<a> { \
+                        fn eq(x: a, y: a): Bool; \
+                        fn neq(x: a, y: a): Bool => !(eq(x, y)); \
+                    } \
+                    impl Eq for Bool { fn eq(true, true) => true; fn eq(false, false) => true; fn eq(_, _) => false; } \
+                    let r = neq(true, false);";
+        assert!(check_program(code).is_ok());
     }
 }

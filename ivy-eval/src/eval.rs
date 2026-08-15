@@ -5,7 +5,8 @@ use std::rc::Rc;
 use std::{env, fs, mem};
 
 use ivy_parse::ModuleLoader;
-use ivy_syntax::decl::ImportKind;
+use ivy_syntax::decl::{FnDecl, ImportKind, TraitItem};
+use ivy_syntax::types::TypeExpr;
 use ivy_syntax::{Decl, Expr, FnBody, Program, Span, Spanned, TypeBody};
 
 use crate::builtins::*;
@@ -13,7 +14,7 @@ use crate::env::Env;
 use crate::error::{EvalError, EvalResult};
 use crate::eval_ops::literal_to_value;
 use crate::pattern::match_pattern;
-use crate::value::{vec_to_list, Closure, FnClause, MultiClauseFn, Value};
+use crate::value::{vec_to_list, Closure, DispatchTag, FnClause, MultiClauseFn, RecursionMode, Value};
 
 /// The interpreter state.
 pub struct Interpreter {
@@ -23,6 +24,10 @@ pub struct Interpreter {
     pub(crate) modules: HashMap<String, HashMap<String, Value>>,
     /// Modules currently being loaded (for cycle detection).
     loaded_modules: HashSet<String>,
+    /// Trait method implementations keyed by `(trait_name, type_tag)` -> `method_name` -> clauses
+    pub(crate) trait_impls: HashMap<(String, String), HashMap<String, Vec<FnClause>>>,
+    /// Trait default impls keyed by `trait_name` -> `method_name` -> default clauses
+    pub(crate) trait_defaults: HashMap<String, HashMap<String, Vec<FnClause>>>,
 }
 
 impl Default for Interpreter {
@@ -67,6 +72,8 @@ impl Interpreter {
             env,
             modules: HashMap::new(),
             loaded_modules: HashSet::new(),
+            trait_impls: HashMap::new(),
+            trait_defaults: HashMap::new(),
         };
         interp.register_builtins();
         interp
@@ -288,6 +295,20 @@ impl Interpreter {
             .define("__println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
         self.env
             .define("__intToString", Value::Builtin(BUILTIN_INT_TO_STRING.clone()), false);
+        self.env
+            .define("__charToString", Value::Builtin(BUILTIN_CHAR_TO_STRING.clone()), false);
+        self.env
+            .define("__intEq", Value::Builtin(BUILTIN_INT_EQ.clone()), false);
+        self.env
+            .define("__floatEq", Value::Builtin(BUILTIN_FLOAT_EQ.clone()), false);
+        self.env
+            .define("__strEq", Value::Builtin(BUILTIN_STR_EQ.clone()), false);
+        self.env
+            .define("__intCompare", Value::Builtin(BUILTIN_INT_COMPARE.clone()), false);
+        self.env
+            .define("__floatCompare", Value::Builtin(BUILTIN_FLOAT_COMPARE.clone()), false);
+        self.env
+            .define("__strCompare", Value::Builtin(BUILTIN_STR_COMPARE.clone()), false);
         self.env
             .define("__readLine", Value::Builtin(BUILTIN_READ_LINE.clone()), false);
         self.env
@@ -548,9 +569,92 @@ impl Interpreter {
         }
     }
 
-    /// Apply a function to arguments.
+    fn register_trait(&mut self, trait_name: &str, items: &[TraitItem]) {
+        let mut defaults: HashMap<String, Vec<FnClause>> = HashMap::new();
+        for item in items {
+            let method_name = match item {
+                TraitItem::Signature { name, .. } => name.name.clone(),
+                TraitItem::DefaultImpl(fn_decl) => fn_decl.name.name.clone(),
+            };
+            self.env.define(
+                &method_name,
+                Value::TraitMethod {
+                    trait_name: trait_name.to_string(),
+                    method: method_name.clone(),
+                },
+                false,
+            );
+            if let TraitItem::DefaultImpl(fn_decl) = item {
+                defaults.insert(
+                    method_name,
+                    vec![FnClause {
+                        params: fn_decl.params.clone(),
+                        body: fn_decl.body.clone(),
+                    }],
+                );
+            }
+        }
+        self.trait_defaults.insert(trait_name.to_string(), defaults);
+    }
+
+    fn register_impl(&mut self, trait_name: &str, for_type: &TypeExpr, methods: &[Spanned<FnDecl>]) {
+        let tag = for_type.dispatch_tag();
+        let grouped = group_fn_clauses(methods.iter().map(|m| &m.node));
+        self.trait_impls.insert((trait_name.to_string(), tag), grouped);
+    }
+
+    /// Look up the impl method for a trait dispatched on `arg`'s runtime type
+    fn lookup_trait_impl(&self, trait_name: &str, method: &str, arg: &Value) -> Option<Value> {
+        let tag = arg.dispatch_tag();
+        let trait_key = trait_name.to_string();
+        let clauses = self
+            .trait_impls
+            .get(&(trait_key.clone(), tag))
+            .and_then(|m| m.get(method))
+            .or_else(|| self.trait_defaults.get(&trait_key).and_then(|m| m.get(method)))?;
+        Some(self.build_method_value(method, clauses))
+    }
+
+    fn build_method_value(&self, method: &str, clauses: &[FnClause]) -> Value {
+        if let [only] = clauses {
+            if let FnBody::Expr(e) = &only.body {
+                return Value::Closure(Rc::new(Closure {
+                    params: only.params.clone(),
+                    body: e.clone(),
+                    env: self.env.fork(),
+                    name: None,
+                }));
+            }
+        }
+        Value::MultiClause(Rc::new(MultiClauseFn {
+            name: method.to_string(),
+            clauses: clauses.to_vec(),
+            env: self.env.fork(),
+            recursion: RecursionMode::ThroughEnv,
+        }))
+    }
+
     fn apply(&mut self, func: Value, args: Vec<Value>, span: Span) -> EvalResult<Value> {
         match func {
+            Value::TraitMethod {
+                ref trait_name,
+                ref method,
+            } => {
+                if args.is_empty() {
+                    return Ok(Value::PartialApp {
+                        func: Box::new(func.clone()),
+                        applied_args: args,
+                    });
+                }
+                let dispatched =
+                    self.lookup_trait_impl(trait_name, method, &args[0])
+                        .ok_or_else(|| EvalError::TypeError {
+                            expected: format!("a value with `impl {} for ...`", trait_name),
+                            found: args[0].type_name(),
+                            span,
+                        })?;
+                self.apply(dispatched, args, span)
+            }
             Value::PartialApp {
                 func: inner_func,
                 applied_args,
@@ -693,8 +797,10 @@ impl Interpreter {
                     self.env.define(&name, val, false);
                 }
 
-                self.env
-                    .define(&multi.name, Value::MultiClause(Rc::new((*multi).clone())), false);
+                if multi.recursion == RecursionMode::SelfBind {
+                    self.env
+                        .define(&multi.name, Value::MultiClause(Rc::new((*multi).clone())), false);
+                }
 
                 let result = match &clause.body {
                     FnBody::Expr(expr) => self.eval_expr(expr),
@@ -788,6 +894,7 @@ impl Interpreter {
                     name: name.clone(),
                     clauses: merged_clauses,
                     env: self.env.fork(),
+                    recursion: RecursionMode::SelfBind,
                 };
                 self.env.define(name, Value::MultiClause(Rc::new(multi)), false);
                 Ok(Value::Unit)
@@ -827,9 +934,19 @@ impl Interpreter {
                 Ok(Value::Unit)
             }
 
-            // TODO(gtr): we do not currently support traits. Next biggest win
-            Decl::Trait { .. } => Ok(Value::Unit),
-            Decl::Impl { .. } => Ok(Value::Unit),
+            Decl::Trait { name, items, .. } => {
+                self.register_trait(&name.name, items);
+                Ok(Value::Unit)
+            }
+            Decl::Impl {
+                trait_name,
+                for_type,
+                methods,
+                ..
+            } => {
+                self.register_impl(&trait_name.name, &for_type.node, methods);
+                Ok(Value::Unit)
+            }
 
             Decl::Let {
                 is_mut, pattern, value, ..
@@ -860,6 +977,7 @@ impl Interpreter {
                             name: fn_decl.name.name.clone(),
                             clauses: vec![clause],
                             env: self.env.fork(),
+                            recursion: RecursionMode::SelfBind,
                         };
                         self.env
                             .define(&fn_decl.name.name, Value::MultiClause(Rc::new(multi)), false);
@@ -874,8 +992,19 @@ impl Interpreter {
     }
 }
 
-/// Grouped declaration after collecting.
 enum GroupedDecl {
     Single(Box<Spanned<Decl>>),
     MultiClauseFn { name: String, clauses: Vec<FnClause> },
+}
+
+fn group_fn_clauses<'a>(decls: impl IntoIterator<Item = &'a FnDecl>) -> HashMap<String, Vec<FnClause>> {
+    let mut grouped: HashMap<String, Vec<FnClause>> = HashMap::new();
+    for fn_decl in decls {
+        let clause = FnClause {
+            params: fn_decl.params.clone(),
+            body: fn_decl.body.clone(),
+        };
+        grouped.entry(fn_decl.name.name.clone()).or_default().push(clause);
+    }
+    grouped
 }

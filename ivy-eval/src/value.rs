@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::rc::Rc;
 
+use ivy_syntax::types::TypeExpr;
 use ivy_syntax::{Expr, FnBody, Param, Spanned};
 
 use crate::env::Env;
@@ -61,6 +62,9 @@ pub enum Value {
 
     /// Partial application: a function with some arguments already applied
     PartialApp { func: Box<Value>, applied_args: Vec<Value> },
+
+    /// Trait method (`show` from `trait Show<a>`). dispatch to the impl's body based on the first arg's runtime type
+    TraitMethod { trait_name: String, method: String },
 }
 
 /// List structure for efficient cons/pattern matching.
@@ -88,6 +92,16 @@ pub struct MultiClauseFn {
     pub name: String,
     pub clauses: Vec<FnClause>,
     pub env: Env,
+    pub recursion: RecursionMode,
+}
+
+/// How a closure or multi-clause resolves its own name when the body executes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RecursionMode {
+    /// Bind the function's name to itself in the body's scope (normal direct recursion)
+    SelfBind,
+    /// Don't bind: the body's recursive call resolves through whtever is in the env
+    ThroughEnv,
 }
 
 /// A single clause of a multi-clause function.
@@ -123,6 +137,43 @@ impl Value {
             Value::Builtin(b) => format!("<builtin {}>", b.name),
             Value::Module { name } => format!("<module {}>", name),
             Value::PartialApp { .. } => "<partial>".to_string(),
+            Value::TraitMethod { trait_name, method } => format!("<{}::{}>", trait_name, method),
+        }
+    }
+}
+
+pub trait DispatchTag {
+    fn dispatch_tag(&self) -> String;
+}
+
+impl DispatchTag for TypeExpr {
+    fn dispatch_tag(&self) -> String {
+        match self {
+            TypeExpr::Named(ident) => ident.name.clone(),
+            TypeExpr::Apply { base, .. } => base.name.clone(),
+            TypeExpr::Function { .. } => "Fun".into(),
+            TypeExpr::Tuple { .. } => "Tuple".into(),
+            TypeExpr::List { .. } => "List".into(),
+            TypeExpr::Unit => "()".into(),
+            TypeExpr::Var(_) => String::new(),
+        }
+    }
+}
+
+impl DispatchTag for Value {
+    fn dispatch_tag(&self) -> String {
+        match self {
+            Value::Unit => "()".into(),
+            Value::Bool(_) => "Bool".into(),
+            Value::Int(_) => "Int".into(),
+            Value::Float(_) => "Float".into(),
+            Value::String(_) => "String".into(),
+            Value::Char(_) => "Char".into(),
+            Value::Tuple(_) => "Tuple".into(),
+            Value::List(_) => "List".into(),
+            Value::Constructor { type_name, .. } => type_name.clone(),
+            Value::Record { type_name, .. } => type_name.clone(),
+            _ => String::new(),
         }
     }
 }
@@ -184,6 +235,7 @@ impl fmt::Display for Value {
             Value::PartialApp { applied_args, .. } => {
                 write!(f, "<partial ({} args applied)>", applied_args.len())
             }
+            Value::TraitMethod { trait_name, method } => write!(f, "<{}::{}>", trait_name, method),
         }
     }
 }
