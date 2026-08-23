@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::fmt;
+use std::mem;
 use std::rc::Rc;
 
 use ivy_syntax::types::TypeExpr;
@@ -72,6 +73,25 @@ pub enum Value {
 pub enum ListValue {
     Nil,
     Cons(Value, Rc<ListValue>),
+}
+
+impl Drop for ListValue {
+    fn drop(&mut self) {
+        if let ListValue::Nil = self {
+            return;
+        }
+        let nil = Rc::new(ListValue::Nil);
+        let mut tail = match self {
+            ListValue::Cons(_, tail) => mem::replace(tail, nil.clone()),
+            ListValue::Nil => return,
+        };
+        while let Ok(mut node) = Rc::try_unwrap(tail) {
+            match &mut node {
+                ListValue::Cons(_, next) => tail = mem::replace(next, nil.clone()),
+                ListValue::Nil => break,
+            }
+        }
+    }
 }
 
 /// A closure captures its defining environment.
