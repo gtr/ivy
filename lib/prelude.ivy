@@ -177,6 +177,53 @@ impl Eq for Option<a> where Eq<a> {
 }
 
 -- =============================================================================
+-- Trait Implementations for Built-in Lists
+-- =============================================================================
+
+fn showElems([]): String => "";
+fn showElems([x]): String => show(x);
+fn showElems([x | xs]): String => show(x) ++ ", " ++ showElems(xs);
+
+impl Show for [a] where Show<a> {
+  fn show(xs) => "[" ++ showElems(xs) ++ "]";
+}
+
+impl Eq for [a] where Eq<a> {
+  fn eq([], []) => true;
+  fn eq([x | xs], [y | ys]) => eq(x, y) and eq(xs, ys);
+  fn eq(_, _) => false;
+}
+
+impl Ord for [a] where Ord<a> {
+  fn compare([], []) => Equal;
+  fn compare([], [_ | _]) => Less;
+  fn compare([_ | _], []) => Greater;
+  fn compare([x | xs], [y | ys]) => match compare(x, y) with
+  | Equal -> compare(xs, ys)
+  | other -> other
+  end;
+}
+
+-- =============================================================================
+-- Trait Implementations for the Unit Type
+-- =============================================================================
+
+impl Show for () {
+  fn show(()) => "()";
+}
+
+impl Eq for () {
+  fn eq((), ()) => true;
+}
+
+impl Ord for () {
+  fn compare((), ()) => Equal;
+}
+
+-- note: tuples get Show/Eq/Ord for ANY arity via structural dispatch built into the
+-- compiler (a tuple satisfies the trait iff every element does)
+
+-- =============================================================================
 -- Boolean Functions
 -- =============================================================================
 

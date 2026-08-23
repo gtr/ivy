@@ -417,6 +417,10 @@ fn check_impl_method(checker: &mut TypeChecker, env: &TypeEnv, fn_decl: &FnDecl)
 // TODO(gtr): a `seen: HashSet<(String, Type)>` cycle detector would catch circular impls more precisely
 const MAX_IMPL_RECURSION: usize = 64;
 
+fn is_structural_tuple_trait(trait_name: &str) -> bool {
+    ivy_syntax::STRUCTURAL_TUPLE_TRAITS.contains(&trait_name)
+}
+
 fn find_impl(checker: &mut TypeChecker, constraint: &TraitConstraint) -> bool {
     find_impl_at(checker, constraint, 0)
 }
@@ -432,6 +436,22 @@ fn find_impl_at(checker: &mut TypeChecker, constraint: &TraitConstraint, depth: 
     let Some(want) = constraint.type_args.first().cloned() else {
         return false;
     };
+
+    // A tuple satisfies these traits iff every element does
+    //
+    // A user `impl Show for (a, b)` still wins
+    if is_structural_tuple_trait(&trait_name) {
+        if let Type::Tuple(elems) = checker.subst.apply(&want) {
+            return elems.iter().all(|e| {
+                let c = TraitConstraint {
+                    trait_name: trait_name.clone(),
+                    type_args: vec![checker.subst.apply(e)],
+                };
+                checker.assumed_constraints.iter().any(|a| a.covers(&c)) || find_impl_at(checker, &c, depth + 1)
+            });
+        }
+    }
+
     let impls: Vec<ImplInfo> = checker.registry.get_impls(&trait_name).to_vec();
 
     for info in impls {

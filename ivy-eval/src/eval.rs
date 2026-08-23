@@ -4,25 +4,26 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::{env, fs, mem};
 
-use ivy_parse::ModuleLoader;
-use ivy_syntax::decl::{FnDecl, ImportKind, TraitItem};
-use ivy_syntax::types::TypeExpr;
-use ivy_syntax::{Decl, Expr, FnBody, Program, Span, Spanned, TypeBody};
-
 use crate::builtins::*;
 use crate::env::Env;
 use crate::error::{EvalError, EvalResult};
 use crate::eval_ops::literal_to_value;
 use crate::pattern::match_pattern;
 use crate::value::{vec_to_list, Closure, DispatchTag, FnClause, MultiClauseFn, RecursionMode, Value};
+use ivy_parse::ModuleLoader;
+use ivy_syntax::decl::{FnDecl, ImportKind, TraitItem};
+use ivy_syntax::types::TypeExpr;
+use ivy_syntax::{
+    Decl, Expr, FnBody, Program, Span, Spanned, TypeBody, EQ_METHOD, EQ_TRAIT, ORD_METHOD, ORD_TRAIT, SHOW_METHOD,
+    SHOW_TRAIT,
+};
 
-/// The interpreter state.
+const ORDERING_EQUAL: &str = "Equal";
+const ORDERING_TYPE: &str = "Ordering";
+
 pub struct Interpreter {
-    /// Global environment.
     pub(crate) env: Env,
-    /// Loaded module namespaces: module_name -> (name -> value).
     pub(crate) modules: HashMap<String, HashMap<String, Value>>,
-    /// Modules currently being loaded (for cycle detection).
     loaded_modules: HashSet<String>,
     /// Trait method implementations keyed by `(trait_name, type_tag)` -> `method_name` -> clauses
     pub(crate) trait_impls: HashMap<(String, String), HashMap<String, Vec<FnClause>>>,
@@ -37,7 +38,6 @@ impl Default for Interpreter {
 }
 
 impl Interpreter {
-    /// Create a new interpreter with builtins and prelude (for tests and standalone usage).
     pub fn new() -> Self {
         let mut interp = Self::with_builtins();
 
@@ -65,7 +65,6 @@ impl Interpreter {
         interp
     }
 
-    /// Create an interpreter with builtins but no prelude.
     pub fn with_builtins() -> Self {
         let env = Env::new();
         let interp = Interpreter {
@@ -79,7 +78,6 @@ impl Interpreter {
         interp
     }
 
-    /// Load a program's declarations into the interpreter (for prelude loading).
     pub fn load_program(&mut self, program: &Program) {
         let grouped = self.collect_declarations(&program.declarations);
         for decl in grouped {
@@ -87,17 +85,14 @@ impl Interpreter {
         }
     }
 
-    /// Get a loaded module by name, if it exists.
     pub fn get_loaded_module(&self, module_name: &str) -> Option<&HashMap<String, Value>> {
         self.modules.get(module_name)
     }
 
-    /// Get a module namespace by name.
     pub fn get_module(&self, name: &str) -> Option<&HashMap<String, Value>> {
         self.modules.get(name)
     }
 
-    /// List exports for modules that are fully imported
     pub fn list_module_exports(&self) -> Vec<(String, Vec<String>)> {
         let imported_modules: Vec<String> = self
             .env
@@ -123,7 +118,6 @@ impl Interpreter {
             .collect()
     }
 
-    /// List all user-defined bindings (excluding builtins).
     pub fn list_bindings(&self) -> Vec<String> {
         let builtins = [
             "__print",
@@ -148,13 +142,11 @@ impl Interpreter {
             .collect()
     }
 
-    /// Evaluate a program with a default loader (for tests and simple usage).
     pub fn eval_program(&mut self, program: &Program) -> EvalResult<Value> {
         let mut loader = ModuleLoader::new(ivy_utils::get_default_search_paths());
         self.eval_program_with_loader(program, &mut loader)
     }
 
-    /// Evaluate a program with a shared module loader.
     pub fn eval_program_with_loader(&mut self, program: &Program, loader: &mut ModuleLoader) -> EvalResult<Value> {
         for decl in &program.declarations {
             if let Decl::Import { path, kind } = &decl.node {
@@ -169,7 +161,6 @@ impl Interpreter {
         Ok(last_value)
     }
 
-    /// Process an import declaration.
     fn process_import(
         &mut self,
         path: &[ivy_syntax::Ident],
@@ -281,7 +272,6 @@ impl Interpreter {
         Ok(())
     }
 
-    /// Register builtins in the current environment.
     fn register_builtins(&self) {
         // True builtins (user-facing, always available)
         self.env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
@@ -634,6 +624,82 @@ impl Interpreter {
         }))
     }
 
+    fn dispatch_method(&mut self, trait_name: &str, method: &str, args: Vec<Value>, span: Span) -> EvalResult<Value> {
+        let tm = Value::TraitMethod {
+            trait_name: trait_name.to_string(),
+            method: method.to_string(),
+        };
+        self.apply(tm, args, span)
+    }
+
+    fn apply_structural_tuple(
+        &mut self,
+        trait_name: &str,
+        method: &str,
+        args: &[Value],
+        span: Span,
+    ) -> EvalResult<Option<Value>> {
+        if !ivy_syntax::STRUCTURAL_TUPLE_TRAITS.contains(&trait_name) {
+            return Ok(None);
+        }
+        match (trait_name, method) {
+            (SHOW_TRAIT, SHOW_METHOD) => {
+                let Some(Value::Tuple(elems)) = args.first() else {
+                    return Ok(None);
+                };
+                let elems = elems.clone();
+                let mut parts = Vec::with_capacity(elems.len());
+                for e in elems {
+                    let shown = self.dispatch_method(SHOW_TRAIT, SHOW_METHOD, vec![e], span)?;
+                    parts.push(match shown {
+                        Value::String(s) => s,
+                        other => other.to_string(),
+                    });
+                }
+                Ok(Some(Value::String(format!("({})", parts.join(", ")))))
+            }
+            (EQ_TRAIT, EQ_METHOD) => {
+                let (Some(Value::Tuple(xs)), Some(Value::Tuple(ys))) = (args.first(), args.get(1)) else {
+                    return Ok(None);
+                };
+                let (xs, ys) = (xs.clone(), ys.clone());
+                if xs.len() != ys.len() {
+                    return Ok(Some(Value::Bool(false)));
+                }
+                for (x, y) in xs.into_iter().zip(ys) {
+                    if matches!(
+                        self.dispatch_method(EQ_TRAIT, EQ_METHOD, vec![x, y], span)?,
+                        Value::Bool(false)
+                    ) {
+                        return Ok(Some(Value::Bool(false)));
+                    }
+                }
+                Ok(Some(Value::Bool(true)))
+            }
+            (ORD_TRAIT, ORD_METHOD) => {
+                let (Some(Value::Tuple(xs)), Some(Value::Tuple(ys))) = (args.first(), args.get(1)) else {
+                    return Ok(None);
+                };
+
+                let (xs, ys) = (xs.clone(), ys.clone());
+                for (x, y) in xs.into_iter().zip(ys) {
+                    let ord = self.dispatch_method(ORD_TRAIT, ORD_METHOD, vec![x, y], span)?;
+
+                    let is_equal = matches!(&ord, Value::Constructor { variant, .. } if variant == ORDERING_EQUAL);
+                    if !is_equal {
+                        return Ok(Some(ord));
+                    }
+                }
+                Ok(Some(Value::Constructor {
+                    type_name: ORDERING_TYPE.to_string(),
+                    variant: ORDERING_EQUAL.to_string(),
+                    fields: vec![],
+                }))
+            }
+            _ => Ok(None),
+        }
+    }
+
     fn apply(&mut self, func: Value, args: Vec<Value>, span: Span) -> EvalResult<Value> {
         match func {
             Value::TraitMethod {
@@ -646,14 +712,21 @@ impl Interpreter {
                         applied_args: args,
                     });
                 }
-                let dispatched =
-                    self.lookup_trait_impl(trait_name, method, &args[0])
-                        .ok_or_else(|| EvalError::TypeError {
-                            expected: format!("a value with `impl {} for ...`", trait_name),
-                            found: args[0].type_name(),
-                            span,
-                        })?;
-                self.apply(dispatched, args, span)
+                match self.lookup_trait_impl(trait_name, method, &args[0]) {
+                    Some(dispatched) => self.apply(dispatched, args, span),
+                    None => {
+                        let (trait_name, method) = (trait_name.clone(), method.clone());
+                        if let Some(result) = self.apply_structural_tuple(&trait_name, &method, &args, span)? {
+                            Ok(result)
+                        } else {
+                            Err(EvalError::TypeError {
+                                expected: format!("a value with `impl {} for ...`", trait_name),
+                                found: args[0].type_name(),
+                                span,
+                            })
+                        }
+                    }
+                }
             }
             Value::PartialApp {
                 func: inner_func,
@@ -738,7 +811,6 @@ impl Interpreter {
         }
     }
 
-    /// Apply a closure with exact number of arguments
     fn apply_closure(&mut self, closure: &Rc<Closure>, args: &[Value], span: Span) -> EvalResult<Value> {
         let saved_env = mem::replace(&mut self.env, closure.env.fork());
         self.env.push_scope();
@@ -764,12 +836,10 @@ impl Interpreter {
         result
     }
 
-    /// Get the arity of a multi-clause function (uses first clause)
     fn multi_clause_arity(&self, multi: &MultiClauseFn) -> usize {
         multi.clauses.first().map(|c| c.params.len()).unwrap_or(0)
     }
 
-    /// Apply a multi-clause function.
     fn apply_multi_clause(&mut self, multi: &MultiClauseFn, args: &[Value], span: Span) -> EvalResult<Value> {
         for clause in &multi.clauses {
             if clause.params.len() != args.len() {
@@ -825,7 +895,6 @@ impl Interpreter {
         Err(EvalError::MatchFailed { span })
     }
 
-    /// Collect and group declarations.
     fn collect_declarations(&self, decls: &[Spanned<Decl>]) -> Vec<GroupedDecl> {
         let mut result = Vec::new();
         let mut pending_fns: HashMap<String, Vec<FnClause>> = HashMap::new();
@@ -863,7 +932,6 @@ impl Interpreter {
         result
     }
 
-    /// Evaluate a grouped declaration.
     fn eval_grouped_decl(&mut self, decl: &GroupedDecl) -> EvalResult<Value> {
         match decl {
             GroupedDecl::Single(d) => self.eval_declaration(d),
@@ -902,7 +970,6 @@ impl Interpreter {
         }
     }
 
-    /// Evaluate a single declaration.
     fn eval_declaration(&mut self, decl: &Spanned<Decl>) -> EvalResult<Value> {
         match &decl.node {
             Decl::Module { .. } => Ok(Value::Unit),

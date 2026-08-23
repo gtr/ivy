@@ -6,7 +6,14 @@ use crate::pattern::{collect_pattern_names, Pattern};
 use crate::span::{Span, Spanned};
 use crate::types::TypeExpr;
 
-/// Import kind for the different import syntaxes.
+pub const SHOW_TRAIT: &str = "Show";
+pub const SHOW_METHOD: &str = "show";
+pub const EQ_TRAIT: &str = "Eq";
+pub const EQ_METHOD: &str = "eq";
+pub const ORD_TRAIT: &str = "Ord";
+pub const ORD_METHOD: &str = "compare";
+pub const STRUCTURAL_TUPLE_TRAITS: &[&str] = &[SHOW_TRAIT, EQ_TRAIT, ORD_TRAIT];
+
 #[derive(Debug, Clone)]
 pub enum ImportKind {
     Qualified,
@@ -15,7 +22,6 @@ pub enum ImportKind {
     Items(Vec<Ident>),
 }
 
-/// Top-level declaration variants.
 #[derive(Debug, Clone)]
 pub enum Decl {
     Module {
@@ -77,7 +83,6 @@ pub enum Decl {
     },
 }
 
-/// Function declaration.
 #[derive(Debug, Clone)]
 pub struct FnDecl {
     pub is_pub: bool,
