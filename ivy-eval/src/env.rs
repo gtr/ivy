@@ -1,5 +1,3 @@
-//! Environment for variable bindings.
-
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -8,24 +6,21 @@ use crate::error::{EvalError, EvalResult};
 use crate::value::Value;
 use ivy_syntax::Span;
 
-/// A binding in the environment.
 #[derive(Debug, Clone)]
 struct Binding {
     value: Value,
     is_mut: bool,
 }
 
-/// A scope containing variable bindings.
 #[derive(Debug, Clone, Default)]
 struct Scope {
     bindings: HashMap<String, Binding>,
 }
 
-/// Environment with lexical scoping.
 #[derive(Debug, Clone)]
 pub struct Env {
-    /// Stack of scopes (innermost last).
-    scopes: Rc<RefCell<Vec<Scope>>>,
+    global: Rc<RefCell<Scope>>,
+    locals: Rc<RefCell<Vec<Scope>>>,
 }
 
 impl Default for Env {
@@ -35,92 +30,103 @@ impl Default for Env {
 }
 
 impl Env {
-    /// Create a new empty environment with one scope.
     pub fn new() -> Self {
         Env {
-            scopes: Rc::new(RefCell::new(vec![Scope::default()])),
+            global: Rc::new(RefCell::new(Scope::default())),
+            locals: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
-    /// Push a new scope.
     pub fn push_scope(&self) {
-        self.scopes.borrow_mut().push(Scope::default());
+        self.locals.borrow_mut().push(Scope::default());
     }
 
-    /// Pop the innermost scope.
     pub fn pop_scope(&self) {
-        let mut scopes = self.scopes.borrow_mut();
-        if scopes.len() > 1 {
-            scopes.pop();
+        self.locals.borrow_mut().pop();
+    }
+
+    pub fn define(&self, name: &str, value: Value, is_mut: bool) {
+        let mut locals = self.locals.borrow_mut();
+        let binding = Binding { value, is_mut };
+        match locals.last_mut() {
+            Some(scope) => {
+                scope.bindings.insert(name.to_string(), binding);
+            }
+            None => {
+                self.global.borrow_mut().bindings.insert(name.to_string(), binding);
+            }
         }
     }
 
-    /// Define a new binding in the current scope.
-    pub fn define(&self, name: &str, value: Value, is_mut: bool) {
-        let mut scopes = self.scopes.borrow_mut();
-        let current = scopes.last_mut().expect("no scope");
-        current.bindings.insert(name.to_string(), Binding { value, is_mut });
-    }
-
-    /// Look up a binding by name
     pub fn get(&self, name: &str) -> Option<Value> {
-        let scopes = self.scopes.borrow();
-        for scope in scopes.iter().rev() {
+        for scope in self.locals.borrow().iter().rev() {
             if let Some(binding) = scope.bindings.get(name) {
                 return Some(binding.value.clone());
             }
         }
-        None
+        self.global.borrow().bindings.get(name).map(|b| b.value.clone())
     }
 
-    /// Assign to a mutable binding (error if not found or immutable)
     pub fn assign(&self, name: &str, value: Value, span: Span) -> EvalResult<()> {
-        let mut scopes = self.scopes.borrow_mut();
-        for scope in scopes.iter_mut().rev() {
-            if let Some(binding) = scope.bindings.get_mut(name) {
-                if !binding.is_mut {
-                    return Err(EvalError::ImmutableAssignment {
-                        name: name.to_string(),
-                        span,
-                    });
+        {
+            let mut locals = self.locals.borrow_mut();
+            for scope in locals.iter_mut().rev() {
+                if let Some(binding) = scope.bindings.get_mut(name) {
+                    return assign_binding(binding, value, name, span);
                 }
-                binding.value = value;
-                return Ok(());
             }
         }
-        Err(EvalError::UndefinedVariable {
-            name: name.to_string(),
-            span,
-        })
-    }
-
-    /// Fork the environment for a closure.
-    /// Creates a new Env that shares nothing with the current one
-    /// (deep clone of _all_ scopes).
-    pub fn fork(&self) -> Self {
-        Env {
-            scopes: Rc::new(RefCell::new(self.scopes.borrow().clone())),
+        let mut global = self.global.borrow_mut();
+        match global.bindings.get_mut(name) {
+            Some(binding) => assign_binding(binding, value, name, span),
+            None => Err(EvalError::UndefinedVariable {
+                name: name.to_string(),
+                span,
+            }),
         }
     }
 
-    /// List all binding names across all scopes.
+    /// Fork the environment for a call: share the global scope, copy only the local stack
+    pub fn fork(&self) -> Self {
+        Env {
+            global: self.global.clone(),
+            locals: Rc::new(RefCell::new(self.locals.borrow().clone())),
+        }
+    }
+
+    /// List all binding names across the global and local scopes
     pub fn list_bindings(&self) -> Vec<String> {
-        let scopes = self.scopes.borrow();
-        let mut names: Vec<String> = scopes.iter().flat_map(|scope| scope.bindings.keys().cloned()).collect();
+        let mut names: Vec<String> = self.global.borrow().bindings.keys().cloned().collect();
+        for scope in self.locals.borrow().iter() {
+            names.extend(scope.bindings.keys().cloned());
+        }
         names.sort();
         names.dedup();
         names
     }
 
-    /// List all bindings (name, value) across all scopes.
+    /// List all bindings (name, value) across the global and local scopes
     pub fn all_bindings(&self) -> Vec<(String, Value)> {
-        let scopes = self.scopes.borrow();
         let mut bindings: HashMap<String, Value> = HashMap::new();
-        for scope in scopes.iter() {
+        for (name, binding) in &self.global.borrow().bindings {
+            bindings.insert(name.clone(), binding.value.clone());
+        }
+        for scope in self.locals.borrow().iter() {
             for (name, binding) in &scope.bindings {
                 bindings.insert(name.clone(), binding.value.clone());
             }
         }
         bindings.into_iter().collect()
     }
+}
+
+fn assign_binding(binding: &mut Binding, value: Value, name: &str, span: Span) -> EvalResult<()> {
+    if !binding.is_mut {
+        return Err(EvalError::ImmutableAssignment {
+            name: name.to_string(),
+            span,
+        });
+    }
+    binding.value = value;
+    Ok(())
 }

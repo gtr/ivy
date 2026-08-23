@@ -1309,4 +1309,28 @@ mod tests {
                     let r = neq(true, false);";
         assert!(check_program(code).is_ok());
     }
+
+    #[test]
+    fn test_forward_reference() {
+        let code = "fn a(n: Int): Int => b(n); fn b(n: Int): Int => n + 1;";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_mutual_recursion() {
+        let code = "fn isEven(0): Bool => true; \
+                    fn isEven(n: Int): Bool => isOdd(n - 1); \
+                    fn isOdd(0): Bool => false; \
+                    fn isOdd(n: Int): Bool => isEven(n - 1); \
+                    let r = isEven(10);";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_polymorphic_fn_used_at_two_types() {
+        let code = "fn wrap(x: a): [a] => [x]; \
+                    let xs = wrap(1); \
+                    let ys = wrap(\"hi\");";
+        assert!(check_program(code).is_ok());
+    }
 }

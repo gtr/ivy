@@ -103,20 +103,25 @@ pub fn enumerate(xs: [a]): [(Int, a)] => enumerateFrom(0, xs);
 -- =============================================================================
 
 -- Create a list of n copies of a value
-pub fn replicate(0, _: a): [a] => [];
-pub fn replicate(n: Int, x: a): [a] => [x | replicate(n - 1, x)];
+pub fn replicate(n: Int, x: a): [a] => replicateInto(n, x, []);
+fn replicateInto(0, _: a, acc: [a]): [a] => acc;
+fn replicateInto(n: Int, x: a, acc: [a]): [a] => replicateInto(n - 1, x, [x | acc]);
 
--- Generate a range of integers [start, stop] (inclusive)
-pub fn range(start: Int, stop: Int): [Int] =>
-  if start > stop then []
-  else [start | range(start + 1, stop)];
+-- Generate a range of integers [start, stop] (inclusive).
+pub fn range(start: Int, stop: Int): [Int] => rangeInto(start, stop, []);
+fn rangeInto(start: Int, stop: Int, acc: [Int]): [Int] =>
+  if stop < start then acc
+  else rangeInto(start, stop - 1, [stop | acc]);
 
 -- Generate a range with a step
 pub fn rangeStep(start: Int, stop: Int, step: Int): [Int] =>
-  if step > 0 and start > stop then []
-  else if step < 0 and start < stop then []
-  else if step == 0 then []
-  else [start | rangeStep(start + step, stop, step)];
+  if step == 0 then []
+  else reverse(rangeStepInto(start, stop, step, []));
+
+fn rangeStepInto(start: Int, stop: Int, step: Int, acc: [Int]): [Int] =>
+  if step > 0 and start > stop then acc
+  else if step < 0 and start < stop then acc
+  else rangeStepInto(start + step, stop, step, [start | acc]);
 
 -- =============================================================================
 -- Transformations

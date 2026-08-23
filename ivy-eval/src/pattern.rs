@@ -86,18 +86,25 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                 }
             }
 
-            let values = list_to_vec(value)?;
-            if elements.len() != values.len() {
+            let Value::List(list) = value else {
                 return None;
-            }
+            };
+            let mut cur = list.as_ref();
             let mut bindings = vec![];
-            for (pat, val) in elements.iter().zip(values.iter()) {
-                match match_pattern(&pat.node, val) {
+            for pat in elements {
+                let ListValue::Cons(h, t) = cur else {
+                    return None;
+                };
+                match match_pattern(&pat.node, h) {
                     Some(b) => bindings.extend(b),
                     None => return None,
                 }
+                cur = t.as_ref();
             }
-            Some(bindings)
+            match cur {
+                ListValue::Nil => Some(bindings),
+                ListValue::Cons(_, _) => None,
+            }
         }
 
         Pattern::Cons { head, tail } => match value {
@@ -160,14 +167,5 @@ fn literal_matches(lit: &Literal, value: &Value) -> bool {
         (Literal::Bool(a), Value::Bool(b)) => a == b,
         (Literal::Unit, Value::Unit) => true,
         _ => false,
-    }
-}
-
-/// Convert a list value to a Vec for pattern matching.
-/// TODO(gtr): better implementation?
-fn list_to_vec(value: &Value) -> Option<Vec<Value>> {
-    match value {
-        Value::List(list) => Some(list.to_vec()),
-        _ => None,
     }
 }

@@ -1,5 +1,3 @@
-//! Tests for the Ivy evaluator.
-
 #[cfg(test)]
 mod env_tests {
     use crate::env::Env;
@@ -65,16 +63,17 @@ mod env_tests {
     }
 
     #[test]
-    fn test_fork_independence() {
+    fn test_fork_shares_global_isolates_locals() {
         let env = Env::new();
-        env.define("x", Value::Int(1), false);
+        env.define("g", Value::Int(1), false);
 
         let forked = env.fork();
-        forked.define("y", Value::Int(2), false);
+        forked.push_scope();
+        forked.define("local", Value::Int(2), false);
 
-        assert!(env.get("y").is_none());
-        assert!(forked.get("x").is_some());
-        assert!(forked.get("y").is_some());
+        assert!(forked.get("g").is_some());
+        assert!(env.get("local").is_none());
+        assert!(forked.get("local").is_some());
     }
 }
 
@@ -515,6 +514,39 @@ mod interpreter_tests {
                     } \
                     neq(true, false);";
         assert!(matches!(eval_no_prelude(code), Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_tco_self_recursion_deep() {
+        let code = "fn sumTo(0, acc) => acc; \
+                    fn sumTo(n, acc) => sumTo(n - 1, acc + n); \
+                    sumTo(1000000, 0);";
+        assert!(matches!(eval(code), Ok(Value::Int(500000500000))));
+    }
+
+    #[test]
+    fn test_tco_mutual_recursion_deep() {
+        let code = "fn isEven(0) => true; \
+                    fn isEven(n) => isOdd(n - 1); \
+                    fn isOdd(0) => false; \
+                    fn isOdd(n) => isEven(n - 1); \
+                    isEven(1000000);";
+        assert!(matches!(eval(code), Ok(Value::Bool(true))));
+    }
+
+    #[test]
+    fn test_tco_tail_call_in_match() {
+        let code = "fn count(0, acc) => acc; \
+                    fn count(n, acc) => match n with | _ -> count(n - 1, acc + 1) end; \
+                    count(1000000, 0);";
+        assert!(matches!(eval(code), Ok(Value::Int(1000000))));
+    }
+
+    #[test]
+    fn test_tco_tail_call_in_if() {
+        let code = "fn sumTo(n, acc) => if n == 0 then acc else sumTo(n - 1, acc + n); \
+                    sumTo(500000, 0);";
+        assert!(matches!(eval(code), Ok(Value::Int(125000250000))));
     }
 }
 

@@ -1,5 +1,3 @@
-//! Main evaluator for Ivy.
-
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::{env, fs, mem};
@@ -29,6 +27,11 @@ pub struct Interpreter {
     pub(crate) trait_impls: HashMap<(String, String), HashMap<String, Vec<FnClause>>>,
     /// Trait default impls keyed by `trait_name` -> `method_name` -> default clauses
     pub(crate) trait_defaults: HashMap<String, HashMap<String, Vec<FnClause>>>,
+}
+
+enum Reduction {
+    Value(Value),
+    TailCall { func: Value, args: Vec<Value>, span: Span },
 }
 
 impl Default for Interpreter {
@@ -559,6 +562,82 @@ impl Interpreter {
         }
     }
 
+    fn eval_expr_tail(&mut self, expr: &Spanned<Expr>) -> EvalResult<Reduction> {
+        let span = expr.span;
+        match &expr.node {
+            Expr::If {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                let cond = self.eval_expr(condition)?;
+                match cond {
+                    Value::Bool(true) => self.eval_expr_tail(then_branch),
+                    Value::Bool(false) => self.eval_expr_tail(else_branch),
+                    _ => Err(EvalError::TypeError {
+                        expected: "Bool".to_string(),
+                        found: cond.type_name(),
+                        span: condition.span,
+                    }),
+                }
+            }
+
+            Expr::Match { scrutinee, arms } => {
+                let value = self.eval_expr(scrutinee)?;
+                for arm in arms {
+                    if let Some(bindings) = match_pattern(&arm.pattern.node, &value) {
+                        self.env.push_scope();
+                        for (name, val) in bindings {
+                            self.env.define(&name, val, false);
+                        }
+                        let result = self.eval_expr_tail(&arm.body);
+                        self.env.pop_scope();
+                        return result;
+                    }
+                }
+                Err(EvalError::MatchFailed { span })
+            }
+
+            Expr::Do { body } => {
+                self.env.push_scope();
+                let result = self.eval_do_tail(body);
+                self.env.pop_scope();
+                result
+            }
+
+            Expr::Paren { inner } => self.eval_expr_tail(inner),
+
+            Expr::Call { callee, args } => {
+                let func = self.eval_expr(callee)?;
+                let arg_values: Vec<Value> = args.iter().map(|a| self.eval_expr(a)).collect::<EvalResult<_>>()?;
+                Ok(Reduction::TailCall {
+                    func,
+                    args: arg_values,
+                    span,
+                })
+            }
+
+            _ => Ok(Reduction::Value(self.eval_expr(expr)?)),
+        }
+    }
+
+    fn eval_do_tail(&mut self, body: &[Spanned<Expr>]) -> EvalResult<Reduction> {
+        let Some((last, init)) = body.split_last() else {
+            return Ok(Reduction::Value(Value::Unit));
+        };
+        for expr in init {
+            self.eval_expr(expr)?;
+        }
+        self.eval_expr_tail(last)
+    }
+
+    fn force(&mut self, reduction: Reduction) -> EvalResult<Value> {
+        match reduction {
+            Reduction::Value(v) => Ok(v),
+            Reduction::TailCall { func, args, span } => self.apply(func, args, span),
+        }
+    }
+
     fn register_trait(&mut self, trait_name: &str, items: &[TraitItem]) {
         let mut defaults: HashMap<String, Vec<FnClause>> = HashMap::new();
         for item in items {
@@ -700,118 +779,135 @@ impl Interpreter {
         }
     }
 
-    fn apply(&mut self, func: Value, args: Vec<Value>, span: Span) -> EvalResult<Value> {
-        match func {
-            Value::TraitMethod {
-                ref trait_name,
-                ref method,
-            } => {
-                if args.is_empty() {
-                    return Ok(Value::PartialApp {
-                        func: Box::new(func.clone()),
-                        applied_args: args,
-                    });
-                }
-                match self.lookup_trait_impl(trait_name, method, &args[0]) {
-                    Some(dispatched) => self.apply(dispatched, args, span),
-                    None => {
-                        let (trait_name, method) = (trait_name.clone(), method.clone());
-                        if let Some(result) = self.apply_structural_tuple(&trait_name, &method, &args, span)? {
-                            Ok(result)
-                        } else {
-                            Err(EvalError::TypeError {
-                                expected: format!("a value with `impl {} for ...`", trait_name),
-                                found: args[0].type_name(),
-                                span,
-                            })
+    fn apply(&mut self, mut func: Value, mut args: Vec<Value>, mut span: Span) -> EvalResult<Value> {
+        loop {
+            match func {
+                Value::TraitMethod { trait_name, method } => {
+                    if args.is_empty() {
+                        return Ok(Value::PartialApp {
+                            func: Box::new(Value::TraitMethod { trait_name, method }),
+                            applied_args: args,
+                        });
+                    }
+                    match self.lookup_trait_impl(&trait_name, &method, &args[0]) {
+                        Some(dispatched) => func = dispatched,
+                        None => {
+                            return match self.apply_structural_tuple(&trait_name, &method, &args, span)? {
+                                Some(result) => Ok(result),
+                                None => Err(EvalError::TypeError {
+                                    expected: format!("a value with `impl {} for ...`", trait_name),
+                                    found: args[0].type_name(),
+                                    span,
+                                }),
+                            };
                         }
                     }
                 }
-            }
-            Value::PartialApp {
-                func: inner_func,
-                applied_args,
-            } => {
-                let mut all_args = applied_args;
-                all_args.extend(args);
-                self.apply(*inner_func, all_args, span)
-            }
 
-            Value::Closure(ref closure) => {
-                let arity = closure.params.len();
+                Value::PartialApp {
+                    func: inner_func,
+                    applied_args,
+                } => {
+                    let mut all_args = applied_args;
+                    all_args.extend(args);
+                    func = *inner_func;
+                    args = all_args;
+                }
 
-                if args.len() < arity {
-                    return Ok(Value::PartialApp {
-                        func: Box::new(func),
-                        applied_args: args,
+                Value::Closure(closure) => {
+                    let arity = closure.params.len();
+                    if args.len() < arity {
+                        return Ok(Value::PartialApp {
+                            func: Box::new(Value::Closure(closure)),
+                            applied_args: args,
+                        });
+                    }
+                    if args.len() > arity {
+                        let later = args.split_off(arity);
+                        let result = self.run_closure_body(&closure, &args, span)?;
+                        func = self.force(result)?;
+                        args = later;
+                        continue;
+                    }
+                    match self.run_closure_body(&closure, &args, span)? {
+                        Reduction::Value(v) => return Ok(v),
+                        Reduction::TailCall {
+                            func: f,
+                            args: a,
+                            span: s,
+                        } => {
+                            func = f;
+                            args = a;
+                            span = s;
+                        }
+                    }
+                }
+
+                Value::MultiClause(multi) => {
+                    let arity = multi.clauses.first().map(|c| c.params.len()).unwrap_or(0);
+                    if args.len() < arity {
+                        return Ok(Value::PartialApp {
+                            func: Box::new(Value::MultiClause(multi)),
+                            applied_args: args,
+                        });
+                    }
+                    if args.len() > arity {
+                        let later = args.split_off(arity);
+                        let result = self.run_multi_clause_body(&multi, &args, span)?;
+                        func = self.force(result)?;
+                        args = later;
+                        continue;
+                    }
+                    match self.run_multi_clause_body(&multi, &args, span)? {
+                        Reduction::Value(v) => return Ok(v),
+                        Reduction::TailCall {
+                            func: f,
+                            args: a,
+                            span: s,
+                        } => {
+                            func = f;
+                            args = a;
+                            span = s;
+                        }
+                    }
+                }
+
+                Value::Builtin(builtin) => {
+                    let arity = builtin.arity;
+                    if args.len() < arity {
+                        return Ok(Value::PartialApp {
+                            func: Box::new(Value::Builtin(builtin)),
+                            applied_args: args,
+                        });
+                    }
+                    if args.len() > arity {
+                        let later = args.split_off(arity);
+                        func = (builtin.func)(&args)?;
+                        args = later;
+                        continue;
+                    }
+                    return (builtin.func)(&args);
+                }
+
+                Value::Constructor { type_name, variant, .. } => {
+                    return Ok(Value::Constructor {
+                        type_name,
+                        variant,
+                        fields: args,
                     });
                 }
 
-                if args.len() > arity {
-                    let (now, later) = args.split_at(arity);
-                    let result = self.apply_closure(closure, now, span)?;
-                    return self.apply(result, later.to_vec(), span);
-                }
-
-                self.apply_closure(closure, &args, span)
-            }
-
-            Value::MultiClause(ref multi) => {
-                let arity = self.multi_clause_arity(multi);
-
-                if args.len() < arity {
-                    return Ok(Value::PartialApp {
-                        func: Box::new(func),
-                        applied_args: args,
+                other => {
+                    return Err(EvalError::NotCallable {
+                        value_type: other.type_name(),
+                        span,
                     });
                 }
-
-                if args.len() > arity {
-                    let (now, later) = args.split_at(arity);
-                    let result = self.apply_multi_clause(multi, now, span)?;
-                    return self.apply(result, later.to_vec(), span);
-                }
-
-                self.apply_multi_clause(multi, &args, span)
             }
-
-            Value::Builtin(ref builtin) => {
-                let arity = builtin.arity;
-
-                if args.len() < arity {
-                    return Ok(Value::PartialApp {
-                        func: Box::new(func),
-                        applied_args: args,
-                    });
-                }
-
-                if args.len() > arity {
-                    let (now, later) = args.split_at(arity);
-                    let result = (builtin.func)(now)?;
-                    return self.apply(result, later.to_vec(), span);
-                }
-
-                (builtin.func)(&args)
-            }
-
-            Value::Constructor {
-                type_name,
-                variant,
-                fields: _,
-            } => Ok(Value::Constructor {
-                type_name,
-                variant,
-                fields: args,
-            }),
-
-            _ => Err(EvalError::NotCallable {
-                value_type: func.type_name(),
-                span,
-            }),
         }
     }
 
-    fn apply_closure(&mut self, closure: &Rc<Closure>, args: &[Value], span: Span) -> EvalResult<Value> {
+    fn run_closure_body(&mut self, closure: &Rc<Closure>, args: &[Value], span: Span) -> EvalResult<Reduction> {
         let saved_env = mem::replace(&mut self.env, closure.env.fork());
         self.env.push_scope();
 
@@ -831,16 +927,12 @@ impl Interpreter {
         if let Some(ref name) = closure.name {
             self.env.define(name, Value::Closure(closure.clone()), false);
         }
-        let result = self.eval_expr(&closure.body);
+        let result = self.eval_expr_tail(&closure.body);
         self.env = saved_env;
         result
     }
 
-    fn multi_clause_arity(&self, multi: &MultiClauseFn) -> usize {
-        multi.clauses.first().map(|c| c.params.len()).unwrap_or(0)
-    }
-
-    fn apply_multi_clause(&mut self, multi: &MultiClauseFn, args: &[Value], span: Span) -> EvalResult<Value> {
+    fn run_multi_clause_body(&mut self, multi: &MultiClauseFn, args: &[Value], span: Span) -> EvalResult<Reduction> {
         for clause in &multi.clauses {
             if clause.params.len() != args.len() {
                 continue;
@@ -873,17 +965,23 @@ impl Interpreter {
                 }
 
                 let result = match &clause.body {
-                    FnBody::Expr(expr) => self.eval_expr(expr),
-                    FnBody::Guards(guards) => {
-                        let mut guard_result = None;
+                    FnBody::Expr(expr) => self.eval_expr_tail(expr),
+                    FnBody::Guards(guards) => 'guards: {
+                        let mut selected = None;
                         for guard in guards {
-                            let cond = self.eval_expr(&guard.guard)?;
-                            if matches!(cond, Value::Bool(true)) {
-                                guard_result = Some(self.eval_expr(&guard.body)?);
-                                break;
+                            match self.eval_expr(&guard.guard) {
+                                Ok(Value::Bool(true)) => {
+                                    selected = Some(&guard.body);
+                                    break;
+                                }
+                                Ok(_) => {}
+                                Err(e) => break 'guards Err(e),
                             }
                         }
-                        guard_result.ok_or(EvalError::MatchFailed { span })
+                        match selected {
+                            Some(body) => self.eval_expr_tail(body),
+                            None => Err(EvalError::MatchFailed { span }),
+                        }
                     }
                 };
 

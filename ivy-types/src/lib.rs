@@ -29,11 +29,24 @@ pub fn check_program(program: &Program) -> TypeResult<()> {
     let mut checker = TypeChecker::new();
     let mut loader = ModuleLoader::new(vec![]);
 
+    prebind_fn_names(&mut checker, &program.declarations, &mut env);
     for decl in &program.declarations {
         check_decl(&mut checker, decl, &mut env, &mut loader)?;
     }
 
     Ok(())
+}
+
+// seed fn names up front so that a body can call a sibling declared later (mutual recursion)
+fn prebind_fn_names(checker: &mut TypeChecker, decls: &[Spanned<Decl>], env: &mut TypeEnv) {
+    for decl in decls {
+        if let Decl::Fn(fn_decl) = &decl.node {
+            if env.get(&fn_decl.name.name).is_none() {
+                let var = checker.fresh_type();
+                env.insert(fn_decl.name.name.clone(), Scheme::mono(var));
+            }
+        }
+    }
 }
 
 /// Type check a program with a given type environment and search paths for imports.
@@ -43,6 +56,7 @@ pub fn check_program_with_env(
     env: &mut TypeEnv,
     loader: &mut ModuleLoader,
 ) -> TypeResult<()> {
+    prebind_fn_names(checker, &program.declarations, env);
     for decl in &program.declarations {
         check_decl(checker, decl, env, loader)?;
     }
@@ -740,6 +754,9 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
 
     let final_ty = checker.finalize(&fn_ty);
     *env = env.apply(&checker.subst);
+    // Drop this fn's own prebind_fn_names placeholder before measuring env vars or it would pin its own type vars and
+    // stay monomorphic
+    env.remove(fn_name);
     let env_vars = env.free_vars();
     let ty_vars: Vec<TypeVar> = final_ty.free_vars().difference(&env_vars).copied().collect();
     let (attached, deferred) = discharge_at_boundary(checker, &ty_vars, &env_vars)?;
