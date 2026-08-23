@@ -49,7 +49,15 @@ impl TypeChecker {
         checker
     }
 
-    /// Auto-register internal traits like `Num`
+    /// Auto-register internal traits like `Num` and `Concat`
+    ///
+    /// NOTE: these aren't visible to users (no method bindings introduced) but are used by operator constraint
+    /// emission:
+    ///
+    /// `+`, `-`, `*`, `/`, `%`, and unary `-` emit a `Num` constraint instead of defaulting an unresolved
+    /// type to `Int`
+    ///
+    /// `++` emits a `Concat` constraint instead of defaulting an unresolved type to a list
     fn register_builtin_traits(&mut self) {
         let num_param = TypeVar(BUILTIN_VAR_OFFSET);
         self.registry.register_trait(TraitInfo {
@@ -68,6 +76,29 @@ impl TypeChecker {
                 span: Span::default(),
             });
         }
+
+        self.registry.register_trait(TraitInfo {
+            name: "Concat".to_string(),
+            param: TypeVar(BUILTIN_VAR_OFFSET + 1),
+            methods: HashMap::new(),
+            default_impls: HashMap::new(),
+            span: Span::default(),
+        });
+        self.registry.register_impl(ImplInfo {
+            trait_name: "Concat".to_string(),
+            head: Type::String,
+            head_vars: vec![],
+            where_constraints: vec![],
+            span: Span::default(),
+        });
+        let elem = TypeVar(BUILTIN_VAR_OFFSET + 2);
+        self.registry.register_impl(ImplInfo {
+            trait_name: "Concat".to_string(),
+            head: Type::list(Type::Var(elem)),
+            head_vars: vec![elem],
+            where_constraints: vec![],
+            span: Span::default(),
+        });
     }
 
     /// Infer the type of an expression.
@@ -244,16 +275,7 @@ impl TypeChecker {
             BinOp::Concat => {
                 unify_with_subst(&left_ty, &right_ty, &mut self.subst, span)?;
                 let resolved = self.subst.apply(&left_ty);
-                match &resolved {
-                    Type::List(_) | Type::String => Ok(resolved),
-                    Type::Var(_) => {
-                        let elem = self.gen.fresh_type();
-                        let list_ty = Type::list(elem);
-                        unify_with_subst(&resolved, &list_ty, &mut self.subst, span)?;
-                        Ok(list_ty)
-                    }
-                    _ => Err(TypeError::mismatch(Type::String, resolved, span)),
-                }
+                self.infer_concat_op(&resolved, span)
             }
         }
     }
@@ -355,9 +377,6 @@ impl TypeChecker {
                 }
             }
         }
-
-        // Check exhaustiveness — point at the scrutinee, since that's the value whose
-        // shape the user needs to handle.
         let patterns: Vec<&Pattern> = arms.iter().map(|arm| &arm.pattern.node).collect();
         let resolved_ty = self.subst.apply(&scrutinee_ty);
         exhaustiveness::check_exhaustiveness(&resolved_ty, &patterns, &self.registry, scrutinee.span)?;
@@ -372,10 +391,6 @@ impl TypeChecker {
         body: &Spanned<Expr>,
         env: &TypeEnv,
     ) -> TypeResult<Type> {
-        // Generate types for parameters. The scope is shared across all
-        // param annotations and the return annotation so that occurrences of
-        // the same lowercase type var (`a` in `fn (x: a, y: a)`) refer to the
-        // same TypeVar.
         let mut param_types = Vec::new();
         let mut bindings = Vec::new();
         let mut type_var_scope: HashMap<String, Type> = HashMap::new();
@@ -751,8 +766,6 @@ impl TypeChecker {
                     }
                     Ok(())
                 } else {
-                    // Unknown record type: fall back to fresh vars (preserves
-                    // earlier behavior for structurally-typed records).
                     for field in fields {
                         let field_ty = self.gen.fresh_type();
                         if let Some(pat) = &field.pattern {
@@ -816,6 +829,26 @@ impl TypeChecker {
         }
     }
 
+    /// An unresolved operand emits a `Concat` constraint and stays polymorphic rather than defaulting to a list so
+    /// `fn f(x, y) => x ++ y` also types at `String`
+    /// TODO(gtr): Might be a cleaner way to do this later
+    fn infer_concat_op(&mut self, ty: &Type, span: Span) -> TypeResult<Type> {
+        let resolved = self.subst.apply(ty);
+        match &resolved {
+            Type::String | Type::List(_) | Type::Var(_) => {
+                self.constraints.push((
+                    TraitConstraint {
+                        trait_name: "Concat".to_string(),
+                        type_args: vec![resolved.clone()],
+                    },
+                    span,
+                ));
+                Ok(resolved)
+            }
+            _ => Err(TypeError::mismatch(Type::String, resolved, span)),
+        }
+    }
+
     pub fn fresh_type(&mut self) -> Type {
         self.gen.fresh_type()
     }
@@ -876,6 +909,7 @@ impl TypeChecker {
                         } else if let Some(scheme) = env.get(name).cloned() {
                             self.instantiate(&scheme, ident.span)
                         } else if let Some(ref mut sc) = scope {
+                            // If we have a scope and name looks like a type variable use consistent type variables
                             if Self::looks_like_type_var(name) {
                                 if let Some(ty) = sc.get(name) {
                                     ty.clone()
