@@ -231,6 +231,23 @@ fn not(true): Bool => false;
 fn not(false): Bool => true;
 
 -- =============================================================================
+-- Char Functions
+-- =============================================================================
+
+fn chars(s: String): [Char] => __strChars(s);
+
+fn charToString(c: Char): String => __charToString(c);
+fn charToInt(c: Char): Int => __charToInt(c);
+fn intToChar(n: Int): Char => __intToChar(n);
+
+fn isDigit(c: Char): Bool => __charIsDigit(c);
+fn isAlpha(c: Char): Bool => __charIsAlpha(c);
+fn isWhitespace(c: Char): Bool => __charIsWhitespace(c);
+
+-- Numeric value of a decimal-digit char: '7' -> 7. Garbage for non-digits.
+fn digitToInt(c: Char): Int => __charToInt(c) - __charToInt('0');
+
+-- =============================================================================
 -- Option Functions
 -- =============================================================================
 
