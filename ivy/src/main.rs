@@ -68,16 +68,17 @@ fn print_type_error(error: TypeError, source: &str, filename: &str) {
 
 fn print_usage() {
     println!("Usage:");
-    println!("  ivy <file>      Run an Ivy program");
-    println!("  ivy             Start the Ivy REPL");
+    println!("  ivy <file>        Run an Ivy program");
+    println!("  ivy               Start the Ivy REPL");
     println!();
     println!("Options:");
-    println!("  -c, --check     Type check without running");
-    println!("  -t, --tree      Print the syntax tree");
-    println!("  -h, --help      Print this help message");
+    println!("  -c, --check       Type check without running");
+    println!("  -t, --tree        Print the syntax tree");
+    println!("      --no-prelude  Do not auto-load the standard prelude");
+    println!("  -h, --help        Print this help message");
 }
 
-fn check_file(path: &str, source: &str) {
+fn check_file(path: &str, source: &str, no_prelude: bool) {
     match ivy_parse::parse(source) {
         Ok(program) => {
             let search_paths = build_search_paths(path);
@@ -85,7 +86,9 @@ fn check_file(path: &str, source: &str) {
             let mut type_checker = ivy_types::TypeChecker::new();
             let mut type_env = ivy_types::TypeEnv::with_builtins();
             let mut interp = Interpreter::with_builtins();
-            load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+            if !no_prelude {
+                load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+            }
 
             match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
                 Ok(()) => {
@@ -104,7 +107,7 @@ fn check_file(path: &str, source: &str) {
     }
 }
 
-fn run_file(path: &str, show_tree: bool, type_check: bool) {
+fn run_file(path: &str, show_tree: bool, type_check: bool, no_prelude: bool) {
     let source = match fs::read_to_string(path) {
         Ok(s) => s,
         Err(e) => {
@@ -114,7 +117,7 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
     };
 
     if type_check {
-        check_file(path, &source);
+        check_file(path, &source, no_prelude);
         return;
     }
 
@@ -128,7 +131,9 @@ fn run_file(path: &str, show_tree: bool, type_check: bool) {
                 let mut type_checker = ivy_types::TypeChecker::new();
                 let mut type_env = ivy_types::TypeEnv::with_builtins();
                 let mut interp = Interpreter::with_builtins();
-                load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+                if !no_prelude {
+                    load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+                }
 
                 match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
                     Ok(()) => match interp.eval_program_with_loader(&program, &mut loader) {
@@ -259,7 +264,7 @@ fn load_prelude(
     }
 }
 
-fn repl() {
+fn repl(no_prelude: bool) {
     print_greeting();
 
     let mut rl = match DefaultEditor::new() {
@@ -274,7 +279,9 @@ fn repl() {
     let mut loader = ivy_parse::ModuleLoader::new(ivy_utils::get_default_search_paths());
     let mut type_checker = ivy_types::TypeChecker::new();
     let mut type_env = ivy_types::TypeEnv::with_builtins();
-    load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+    if !no_prelude {
+        load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+    }
 
     let mut input_buffer = String::new();
     let mut continuation = false;
@@ -317,7 +324,9 @@ fn repl() {
                             loader = ivy_parse::ModuleLoader::new(ivy_utils::get_default_search_paths());
                             type_checker = ivy_types::TypeChecker::new();
                             type_env = ivy_types::TypeEnv::with_builtins();
-                            load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+                            if !no_prelude {
+                                load_prelude(&mut interp, &mut type_checker, &mut type_env, &mut loader);
+                            }
                             println!("Interpreter state reset.");
                         }
 
@@ -463,6 +472,7 @@ fn main() {
 
     let mut show_tree = false;
     let mut type_check = false;
+    let mut no_prelude = false;
     let mut file_path: Option<&str> = None;
 
     let mut i = 1;
@@ -478,6 +488,9 @@ fn main() {
             "-c" | "--check" => {
                 type_check = true;
             }
+            "--no-prelude" => {
+                no_prelude = true;
+            }
             arg if !arg.starts_with('-') => {
                 file_path = Some(arg);
             }
@@ -491,7 +504,7 @@ fn main() {
     }
 
     match file_path {
-        Some(path) => run_file(path, show_tree, type_check),
-        None => repl(),
+        Some(path) => run_file(path, show_tree, type_check, no_prelude),
+        None => repl(no_prelude),
     }
 }
