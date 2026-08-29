@@ -781,6 +781,7 @@ pub fn type_check_module(
 ) -> TypeResult<HashMap<String, Scheme>> {
     let public_names = collect_public_names(&program.declarations);
     let mut module_env = TypeEnv::with_builtins();
+    prebind_fn_names(checker, &program.declarations, &mut module_env);
     for decl in &program.declarations {
         check_decl(checker, decl, &mut module_env, loader)?;
     }
