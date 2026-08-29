@@ -306,6 +306,31 @@ impl TypeEnv {
             )),
         );
 
+        env.insert(
+            "__strChars".to_string(),
+            Scheme::mono(Type::fun(Type::String, Type::List(Box::new(Type::Char)))),
+        );
+        env.insert(
+            "__charIsDigit".to_string(),
+            Scheme::mono(Type::fun(Type::Char, Type::Bool)),
+        );
+        env.insert(
+            "__charIsAlpha".to_string(),
+            Scheme::mono(Type::fun(Type::Char, Type::Bool)),
+        );
+        env.insert(
+            "__charIsWhitespace".to_string(),
+            Scheme::mono(Type::fun(Type::Char, Type::Bool)),
+        );
+        env.insert(
+            "__charToInt".to_string(),
+            Scheme::mono(Type::fun(Type::Char, Type::Int)),
+        );
+        env.insert(
+            "__intToChar".to_string(),
+            Scheme::mono(Type::fun(Type::Int, Type::Char)),
+        );
+
         // ========================================================================
         // File I/O intrinsics (wrapped by lib/File.ivy)
         // ========================================================================

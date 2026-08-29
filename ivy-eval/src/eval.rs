@@ -371,6 +371,21 @@ impl Interpreter {
             .define("__strEndsWith", Value::Builtin(BUILTIN_STR_ENDS_WITH.clone()), false);
         self.env
             .define("__strReplace", Value::Builtin(BUILTIN_STR_REPLACE.clone()), false);
+        self.env
+            .define("__strChars", Value::Builtin(BUILTIN_STR_CHARS.clone()), false);
+        self.env
+            .define("__charIsDigit", Value::Builtin(BUILTIN_CHAR_IS_DIGIT.clone()), false);
+        self.env
+            .define("__charIsAlpha", Value::Builtin(BUILTIN_CHAR_IS_ALPHA.clone()), false);
+        self.env.define(
+            "__charIsWhitespace",
+            Value::Builtin(BUILTIN_CHAR_IS_WHITESPACE.clone()),
+            false,
+        );
+        self.env
+            .define("__charToInt", Value::Builtin(BUILTIN_CHAR_TO_INT.clone()), false);
+        self.env
+            .define("__intToChar", Value::Builtin(BUILTIN_INT_TO_CHAR.clone()), false);
 
         // File I/O intrinsics (wrapped by lib/File.ivy)
         self.env

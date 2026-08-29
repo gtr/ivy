@@ -175,6 +175,33 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_char_builtins() {
+        assert!(matches!(eval_no_prelude("__charIsDigit('7');"), Ok(Value::Bool(true))));
+        assert!(matches!(eval_no_prelude("__charIsDigit('x');"), Ok(Value::Bool(false))));
+        assert!(matches!(eval_no_prelude("__charIsAlpha('x');"), Ok(Value::Bool(true))));
+        assert!(matches!(eval_no_prelude("__charIsAlpha('7');"), Ok(Value::Bool(false))));
+        assert!(matches!(
+            eval_no_prelude("__charIsWhitespace(' ');"),
+            Ok(Value::Bool(true))
+        ));
+        assert!(matches!(eval_no_prelude("__charToInt('A');"), Ok(Value::Int(65))));
+        assert!(matches!(eval_no_prelude("__intToChar(66);"), Ok(Value::Char('B'))));
+        assert!(eval_no_prelude("__intToChar(-1);").is_err());
+    }
+
+    #[test]
+    fn test_str_chars_builtin() {
+        if let Ok(Value::List(l)) = eval_no_prelude("__strChars(\"hi\");") {
+            let vec = l.to_vec();
+            assert_eq!(vec.len(), 2);
+            assert!(matches!(vec[0], Value::Char('h')));
+            assert!(matches!(vec[1], Value::Char('i')));
+        } else {
+            panic!("Expected list of chars");
+        }
+    }
+
+    #[test]
     fn test_comparison() {
         assert!(matches!(eval("1 < 2;"), Ok(Value::Bool(true))));
         assert!(matches!(eval("2 > 1;"), Ok(Value::Bool(true))));

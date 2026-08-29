@@ -640,12 +640,119 @@ pub static BUILTIN_STR_ENDS_WITH: BuiltinFn = BuiltinFn {
     func: builtin_str_ends_with,
 };
 
-/// String replace
 pub static BUILTIN_STR_REPLACE: BuiltinFn = BuiltinFn {
     name: "__strReplace",
     arity: 3,
     func: builtin_str_replace,
 };
+
+pub static BUILTIN_STR_CHARS: BuiltinFn = BuiltinFn {
+    name: "__strChars",
+    arity: 1,
+    func: builtin_str_chars,
+};
+
+pub static BUILTIN_CHAR_IS_DIGIT: BuiltinFn = BuiltinFn {
+    name: "__charIsDigit",
+    arity: 1,
+    func: builtin_char_is_digit,
+};
+
+pub static BUILTIN_CHAR_IS_ALPHA: BuiltinFn = BuiltinFn {
+    name: "__charIsAlpha",
+    arity: 1,
+    func: builtin_char_is_alpha,
+};
+
+pub static BUILTIN_CHAR_IS_WHITESPACE: BuiltinFn = BuiltinFn {
+    name: "__charIsWhitespace",
+    arity: 1,
+    func: builtin_char_is_whitespace,
+};
+
+pub static BUILTIN_CHAR_TO_INT: BuiltinFn = BuiltinFn {
+    name: "__charToInt",
+    arity: 1,
+    func: builtin_char_to_int,
+};
+
+pub static BUILTIN_INT_TO_CHAR: BuiltinFn = BuiltinFn {
+    name: "__intToChar",
+    arity: 1,
+    func: builtin_int_to_char,
+};
+
+fn builtin_str_chars(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::String(s) => Ok(vec_to_list(s.chars().map(Value::Char).collect())),
+        v => Err(EvalError::TypeError {
+            expected: "String".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_char_is_digit(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Char(c) => Ok(Value::Bool(c.is_ascii_digit())),
+        v => Err(EvalError::TypeError {
+            expected: "Char".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_char_is_alpha(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Char(c) => Ok(Value::Bool(c.is_alphabetic())),
+        v => Err(EvalError::TypeError {
+            expected: "Char".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_char_is_whitespace(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Char(c) => Ok(Value::Bool(c.is_whitespace())),
+        v => Err(EvalError::TypeError {
+            expected: "Char".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_char_to_int(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Char(c) => Ok(Value::Int(*c as i64)),
+        v => Err(EvalError::TypeError {
+            expected: "Char".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_int_to_char(args: &[Value]) -> EvalResult<Value> {
+    match &args[0] {
+        Value::Int(n) => match u32::try_from(*n).ok().and_then(char::from_u32) {
+            Some(c) => Ok(Value::Char(c)),
+            None => Err(EvalError::ValueError {
+                message: format!("{} is not a valid Unicode code point", n),
+                span: Span::default(),
+            }),
+        },
+        v => Err(EvalError::TypeError {
+            expected: "Int".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
 
 fn builtin_str_length(args: &[Value]) -> EvalResult<Value> {
     match &args[0] {
