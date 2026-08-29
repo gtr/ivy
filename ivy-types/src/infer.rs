@@ -1108,6 +1108,13 @@ mod tests {
         crate::check_program_with_env(&program, &mut checker, &mut env, &mut loader)
     }
 
+    fn check_module(code: &str) -> TypeResult<()> {
+        let program = ivy_parse::parse(code).expect("parse failed");
+        let mut checker = TypeChecker::new();
+        let mut loader = ivy_parse::ModuleLoader::new(vec![]);
+        crate::type_check_module(&program, &mut checker, &mut loader).map(|_| ())
+    }
+
     #[test]
     fn test_alias_simple() {
         assert!(check_program("type Latitude = Float; let x: Latitude = 45.0;").is_ok());
@@ -1332,5 +1339,14 @@ mod tests {
                     let xs = wrap(1); \
                     let ys = wrap(\"hi\");";
         assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_module_forward_reference() {
+        let code = "module M; \
+                    pub fn replicate(n: Int, x: a): [a] => go(n, x, []); \
+                    fn go(0, _: a, acc: [a]): [a] => acc; \
+                    fn go(n: Int, x: a, acc: [a]): [a] => go(n - 1, x, [x | acc]);";
+        assert!(check_module(code).is_ok());
     }
 }
