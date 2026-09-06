@@ -1,5 +1,6 @@
 #![allow(clippy::result_large_err)]
 
+pub mod bindgroups;
 pub mod env;
 pub mod error;
 pub mod exhaustiveness;
@@ -29,24 +30,44 @@ pub fn check_program(program: &Program) -> TypeResult<()> {
     let mut checker = TypeChecker::new();
     let mut loader = ModuleLoader::new(vec![]);
 
-    prebind_fn_names(&mut checker, &program.declarations, &mut env);
-    for decl in &program.declarations {
-        check_decl(&mut checker, decl, &mut env, &mut loader)?;
-    }
-
-    Ok(())
+    check_declarations(&mut checker, &program.declarations, &mut env, &mut loader)
 }
 
-// seed fn names up front so that a body can call a sibling declared later (mutual recursion)
-fn prebind_fn_names(checker: &mut TypeChecker, decls: &[Spanned<Decl>], env: &mut TypeEnv) {
+fn check_declarations(
+    checker: &mut TypeChecker,
+    decls: &[Spanned<Decl>],
+    env: &mut TypeEnv,
+    loader: &mut ModuleLoader,
+) -> TypeResult<()> {
+    let is_value = |d: &Decl| matches!(d, Decl::Fn(_) | Decl::Let { .. } | Decl::Impl { .. });
+
     for decl in decls {
-        if let Decl::Fn(fn_decl) = &decl.node {
-            if env.get(&fn_decl.name.name).is_none() {
-                let var = checker.fresh_type();
-                env.insert(fn_decl.name.name.clone(), Scheme::mono(var));
-            }
+        if !is_value(&decl.node) {
+            check_decl(checker, decl, env, loader)?;
         }
     }
+
+    let value_idx: Vec<usize> = decls
+        .iter()
+        .enumerate()
+        .filter(|(_, d)| is_value(&d.node))
+        .map(|(i, _)| i)
+        .collect();
+
+    for group in bindgroups::order_value_bindings(decls, &value_idx) {
+        for &i in &group {
+            if let Decl::Fn(fn_decl) = &decls[i].node {
+                if env.get(&fn_decl.name.name).is_none() {
+                    let var = checker.fresh_type();
+                    env.insert(fn_decl.name.name.clone(), Scheme::mono(var));
+                }
+            }
+        }
+        for &i in &group {
+            check_decl(checker, &decls[i], env, loader)?;
+        }
+    }
+    Ok(())
 }
 
 /// Type check a program with a given type environment and search paths for imports.
@@ -56,11 +77,7 @@ pub fn check_program_with_env(
     env: &mut TypeEnv,
     loader: &mut ModuleLoader,
 ) -> TypeResult<()> {
-    prebind_fn_names(checker, &program.declarations, env);
-    for decl in &program.declarations {
-        check_decl(checker, decl, env, loader)?;
-    }
-    Ok(())
+    check_declarations(checker, &program.declarations, env, loader)
 }
 
 /// If the error is a Mismatch without an `expected_span`, attach one.
@@ -781,10 +798,7 @@ pub fn type_check_module(
 ) -> TypeResult<HashMap<String, Scheme>> {
     let public_names = collect_public_names(&program.declarations);
     let mut module_env = TypeEnv::with_builtins();
-    prebind_fn_names(checker, &program.declarations, &mut module_env);
-    for decl in &program.declarations {
-        check_decl(checker, decl, &mut module_env, loader)?;
-    }
+    check_declarations(checker, &program.declarations, &mut module_env, loader)?;
     let mut exports = HashMap::new();
     for name in public_names {
         if let Some(scheme) = module_env.get(&name) {
