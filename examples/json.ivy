@@ -1,0 +1,126 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : json
+--- Author       : Gerardo Torres Castro
+--- Date         : September 6, 2026
+---
+--- A small JSON parser in Ivy: recursive descent over [Char]
+--- Supports null, booleans, integers, strings (no escapes), arrays, objects.
+---
+-------------------------------------------------------------------------------
+
+
+type Json =
+| JNull
+| JBool(Bool)
+| JNum(Int)
+| JStr(String)
+| JArr([Json])
+| JObj([(String, Json)])
+;
+
+fn andThen(None, f: a -> Option<b>): Option<b> => None;
+fn andThen(Some(x), f: a -> Option<b>): Option<b> => f(x);
+
+fn orElse(Some(x), _: Option<a>): Option<a> => Some(x);
+fn orElse(None, alt: Option<a>): Option<a> => alt;
+
+fn skipWs([]): [Char] => [];
+fn skipWs([c | cs]): [Char] => if isWhitespace(c) then skipWs(cs) else [c | cs];
+
+fn matchKw(cs: [Char], []): Option<[Char]> => Some(cs);
+fn matchKw([], [_ | _]): Option<[Char]> => None;
+fn matchKw([c | cs], [k | ks]): Option<[Char]> => if c == k then matchKw(cs, ks) else None;
+
+fn parseDigits([], acc: Int): (Int, [Char]) => (acc, []);
+fn parseDigits([c | cs], acc: Int): (Int, [Char]) =>
+  if isDigit(c) then parseDigits(cs, acc * 10 + digitToInt(c)) else (acc, [c | cs]);
+
+-- Assumes the opening quote is already consumed; stops at the closing quote
+fn parseStr([], acc: String): (String, [Char]) => (acc, []);
+fn parseStr(['"' | cs], acc: String): (String, [Char]) => (acc, cs);
+fn parseStr([c | cs], acc: String): (String, [Char]) => parseStr(cs, acc ++ charToString(c));
+
+fn keyword(cs: [Char], word: String, value: Json): Option<(Json, [Char])> =>
+  match matchKw(cs, chars(word)) with
+  | Some(rest) -> Some((value, rest))
+  | None -> None
+end;
+
+fn parseValue(cs0: [Char]): Option<(Json, [Char])> => match skipWs(cs0) with
+  | [] -> None
+  | ['"' | rest] -> do { let (s, more) = parseStr(rest, ""); Some((JStr(s), more)) }
+  | ['[' | rest] -> parseArray(rest)
+  | ['{' | rest] -> parseObject(rest)
+  | ['-' | rest] -> do { let (n, more) = parseDigits(rest, 0); Some((JNum(0 - n), more)) }
+  | [c | rest] ->
+      if isDigit(c) then do { let (n, more) = parseDigits([c | rest], 0); Some((JNum(n), more)) }
+      else orElse(keyword([c | rest], "true", JBool(true)),
+           orElse(keyword([c | rest], "false", JBool(false)),
+                  keyword([c | rest], "null", JNull)))
+end;
+
+fn parseArray(cs0: [Char]): Option<(Json, [Char])> => match skipWs(cs0) with
+  | [']' | rest] -> Some((JArr([]), rest))
+  | cs -> parseArrayElems(cs, [])
+end;
+
+fn parseArrayElems(cs: [Char], acc: [Json]): Option<(Json, [Char])> =>
+  andThen(parseValue(cs), fn (pair) => do {
+    let (v, rest) = pair;
+    match skipWs(rest) with
+    | [',' | more] -> parseArrayElems(more, concat(acc, [v]))
+    | [']' | more] -> Some((JArr(concat(acc, [v])), more))
+    | _ -> None
+    end
+  });
+
+fn parseObject(cs0: [Char]): Option<(Json, [Char])> => match skipWs(cs0) with
+  | ['}' | rest] -> Some((JObj([]), rest))
+  | cs -> parseObjectEntries(cs, [])
+end;
+
+fn parseObjectEntries(cs0: [Char], acc: [(String, Json)]): Option<(Json, [Char])> =>
+  match skipWs(cs0) with
+  | ['"' | rest] -> do {
+      let (key, afterKey) = parseStr(rest, "");
+      match skipWs(afterKey) with
+      | [':' | more] -> andThen(parseValue(more), fn (pair) => do {
+          let (v, rest) = pair;
+          match skipWs(rest) with
+          | [',' | more2] -> parseObjectEntries(more2, concat(acc, [(key, v)]))
+          | ['}' | more2] -> Some((JObj(concat(acc, [(key, v)])), more2))
+          | _ -> None
+          end
+        })
+      | _ -> None
+      end
+    }
+  | _ -> None
+end;
+
+fn parse(s: String): Option<Json> =>
+  andThen(parseValue(chars(s)), fn (pair) => do { let (v, _) = pair; Some(v) });
+
+fn showJson(JNull): String => "null";
+fn showJson(JBool(b)): String => show(b);
+fn showJson(JNum(n)): String => show(n);
+fn showJson(JStr(s)): String => "\"" ++ s ++ "\"";
+fn showJson(JArr(xs)): String => "[" ++ showJsonList(xs) ++ "]";
+fn showJson(JObj(kvs)): String => "{" ++ showJsonObj(kvs) ++ "}";
+
+fn showJsonList([]): String => "";
+fn showJsonList([x]): String => showJson(x);
+fn showJsonList([x | xs]): String => showJson(x) ++ "," ++ showJsonList(xs);
+
+fn showJsonObj([]): String => "";
+fn showJsonObj([(k, v)]): String => "\"" ++ k ++ "\":" ++ showJson(v);
+fn showJsonObj([(k, v) | rest]): String => "\"" ++ k ++ "\":" ++ showJson(v) ++ "," ++ showJsonObj(rest);
+
+fn showResult(None): String => "parse error";
+fn showResult(Some(j)): String => showJson(j);
+
+println(showResult(parse("null")));
+println(showResult(parse("[1, 2, 3]")));
+println(showResult(parse("{\"name\": \"ivy\", \"nums\": [10, -5], \"ok\": true}")));
+println(showResult(parse("[[1], [2, 3], []]")));
