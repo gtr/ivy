@@ -1342,6 +1342,16 @@ mod tests {
     }
 
     #[test]
+    fn test_forward_referenced_helper_generalizes() {
+        let code = "fn myLen(xs: [a]): Int => myFold(fn (n, _) => n + 1, 0, xs); \
+                    fn myFold(f: b -> a -> b, acc: b, []): b => acc; \
+                    fn myFold(f: b -> a -> b, acc: b, [x | xs]): b => myFold(f, f(acc, x), xs); \
+                    let p = myLen([1, 2, 3]); \
+                    let q = myLen([[1], [2]]);";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
     fn test_module_forward_reference() {
         let code = "module M; \
                     pub fn replicate(n: Int, x: a): [a] => go(n, x, []); \
