@@ -1,0 +1,76 @@
+--------------------------------------------------------------------------------
+---
+--- Module       : conway
+--- Author       : Gerardo Torres Castro
+--- Date         : September 6, 2026
+---
+--- Conway's Game of Life in Ivy
+--- A grid is of type [[Int]] where 1 = alive and 0 = dead. edges are dead (no wrap)
+---
+-------------------------------------------------------------------------------
+
+
+
+import List;
+
+-- Cell lookup with out-of-bounds treated as dead
+fn cellAt(grid: [[Int]], r: Int, c: Int): Int =>
+  match List.nth(grid, r) with
+  | None -> 0
+  | Some(row) -> match List.nth(row, c) with
+      | None -> 0
+      | Some(v) -> v
+    end
+end;
+
+fn neighbors(grid: [[Int]], r: Int, c: Int): Int =>
+  cellAt(grid, r - 1, c - 1) + cellAt(grid, r - 1, c) + cellAt(grid, r - 1, c + 1)
+  + cellAt(grid, r, c - 1)                            + cellAt(grid, r, c + 1)
+  + cellAt(grid, r + 1, c - 1) + cellAt(grid, r + 1, c) + cellAt(grid, r + 1, c + 1);
+
+fn nextCell(1, 2): Int => 1;
+fn nextCell(1, 3): Int => 1;
+fn nextCell(0, 3): Int => 1;
+fn nextCell(_, _): Int => 0;
+
+fn colsOf([]): Int => 0;
+fn colsOf([row | _]): Int => length(row);
+
+fn buildRow(grid: [[Int]], r: Int, c: Int, cols: Int): [Int] =>
+  if c >= cols then []
+  else [nextCell(cellAt(grid, r, c), neighbors(grid, r, c)) | buildRow(grid, r, c + 1, cols)];
+
+fn buildRows(grid: [[Int]], r: Int, rows: Int, cols: Int): [[Int]] =>
+  if r >= rows then []
+  else [buildRow(grid, r, 0, cols) | buildRows(grid, r + 1, rows, cols)];
+
+fn step(grid: [[Int]]): [[Int]] => buildRows(grid, 0, length(grid), colsOf(grid));
+
+fn cellChar(0): String => ".";
+fn cellChar(_): String => "#";
+
+fn renderRow([]): String => "";
+fn renderRow([x | xs]): String => cellChar(x) ++ renderRow(xs);
+
+fn render([]): String => "";
+fn render([row]): String => renderRow(row);
+fn render([row | rows]): String => renderRow(row) ++ "\n" ++ render(rows);
+
+fn run(grid: [[Int]], gen: Int, total: Int): () =>
+  if gen > total then ()
+  else do {
+    println("gen " ++ show(gen) ++ ":");
+    println(render(grid));
+    println("");
+    run(step(grid), gen + 1, total)
+  };
+
+-- A glider on a 6x6 board
+let glider = [[0, 1, 0, 0, 0, 0],
+              [0, 0, 1, 0, 0, 0],
+              [1, 1, 1, 0, 0, 0],
+              [0, 0, 0, 0, 0, 0],
+              [0, 0, 0, 0, 0, 0],
+              [0, 0, 0, 0, 0, 0]];
+
+run(glider, 0, 3);
