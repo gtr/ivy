@@ -62,7 +62,6 @@ impl<'a> Parser<'a> {
         self.peek() == kind
     }
 
-    /// Check if the token current position + offset matches a kind.
     fn check_ahead(&self, offset: usize, kind: TokenKind) -> bool {
         self.tokens.get(self.pos + offset).is_some_and(|t| t.kind == kind)
     }
@@ -931,6 +930,26 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
+    /// Parse pipe expressions: `a |> f` desugars to `f(a)` (reverse application)
+    fn parse_pipe_expr(&mut self) -> ParseResult<Spanned<Expr>> {
+        let start = self.current().span.start;
+        let mut left = self.parse_concat_expr()?;
+
+        while self.match_token(TokenKind::PipeGt).is_some() {
+            let right = self.parse_concat_expr()?;
+            let span = self.span_from(start);
+            left = Spanned::new(
+                Expr::Call {
+                    callee: Box::new(right),
+                    args: vec![left],
+                },
+                span,
+            );
+        }
+
+        Ok(left)
+    }
+
     /// Parse or expression: a or b
     fn parse_or_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
@@ -1008,7 +1027,7 @@ impl<'a> Parser<'a> {
     /// Parse comparison expression: a < b, a <= b, etc.
     fn parse_cmp_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
-        let left = self.parse_concat_expr()?;
+        let left = self.parse_pipe_expr()?;
 
         let op = if self.match_token(TokenKind::Lt).is_some() {
             Some(BinOp::Lt)
@@ -1024,7 +1043,7 @@ impl<'a> Parser<'a> {
 
         if let Some(op) = op {
             let op_span = self.tokens[self.pos - 1].span;
-            let right = self.parse_concat_expr()?;
+            let right = self.parse_pipe_expr()?;
             let span = self.span_from(start);
             return Ok(Spanned::new(
                 Expr::Binary {

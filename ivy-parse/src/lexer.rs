@@ -185,6 +185,10 @@ impl<'a> Lexer<'a> {
             self.advance_by(2);
             return Ok(self.make_token(TokenKind::FatArrow, start));
         }
+        if self.starts_with("|>") {
+            self.advance_by(2);
+            return Ok(self.make_token(TokenKind::PipeGt, start));
+        }
 
         // Single-character tokens
         let kind = match ch {
