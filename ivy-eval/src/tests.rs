@@ -196,6 +196,22 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_let_in() {
+        assert!(matches!(
+            eval("fn f() => let x = 10 in x + 5; f();"),
+            Ok(Value::Int(15))
+        ));
+        assert!(matches!(
+            eval("fn f() => let a = 2 in let b = 3 in a * b; f();"),
+            Ok(Value::Int(6))
+        ));
+        assert!(matches!(
+            eval("fn f() => let (a, b) = (1, 2) in b - a; f();"),
+            Ok(Value::Int(1))
+        ));
+    }
+
+    #[test]
     fn test_char_builtins() {
         assert!(matches!(eval_no_prelude("__charIsDigit('7');"), Ok(Value::Bool(true))));
         assert!(matches!(eval_no_prelude("__charIsDigit('x');"), Ok(Value::Bool(false))));

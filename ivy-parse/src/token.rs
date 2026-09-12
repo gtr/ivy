@@ -78,6 +78,7 @@ pub enum TokenKind {
     Where,
     Do,
     For,
+    In,
     And,
     Or,
 
@@ -209,6 +210,7 @@ impl TokenKind {
             "where" => Some(TokenKind::Where),
             "do" => Some(TokenKind::Do),
             "for" => Some(TokenKind::For),
+            "in" => Some(TokenKind::In),
             "and" => Some(TokenKind::And),
             "or" => Some(TokenKind::Or),
             _ => None,
@@ -248,6 +250,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Where => "'where'",
             TokenKind::Do => "'do'",
             TokenKind::For => "'for'",
+            TokenKind::In => "'in'",
             TokenKind::And => "'and'",
             TokenKind::Or => "'or'",
             TokenKind::Plus => "'+'",
