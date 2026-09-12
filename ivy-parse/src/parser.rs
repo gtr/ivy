@@ -790,16 +790,30 @@ impl<'a> Parser<'a> {
         self.expect(TokenKind::Eq)?;
         let value = self.parse_expr()?;
 
-        let span = self.span_from(start);
-        Ok(Spanned::new(
+        let let_expr = Spanned::new(
             Expr::Let {
                 is_mut,
                 pattern: Box::new(pattern),
                 ty,
                 value: Box::new(value),
             },
-            span,
-        ))
+            self.span_from(start),
+        );
+
+        // `let pat = value in body` scopes the binding over `body`: desugar to a do-block:
+        // `do { let pat = value; body }`
+        if self.match_token(TokenKind::In).is_some() {
+            let body = self.parse_expr()?;
+            let span = self.span_from(start);
+            Ok(Spanned::new(
+                Expr::Do {
+                    body: vec![let_expr, body],
+                },
+                span,
+            ))
+        } else {
+            Ok(let_expr)
+        }
     }
 
     /// Parse if expression: if cond then a else b
