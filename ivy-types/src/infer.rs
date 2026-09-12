@@ -9,7 +9,7 @@
 use crate::env::{TypeEnv, TypeVarGen, BUILTIN_VAR_OFFSET};
 use crate::error::{TypeError, TypeResult};
 use crate::exhaustiveness;
-use crate::registry::{ImplInfo, RecordFieldInfo, TraitInfo, TypeRegistry};
+use crate::registry::{ImplInfo, TraitInfo, TypeRegistry};
 use crate::subst::Subst;
 use crate::types::{Scheme, TraitConstraint, Type, TypeVar};
 use crate::unify::unify_with_subst;
@@ -153,39 +153,45 @@ impl TypeChecker {
             Expr::List { elements } => self.infer_list(elements, env, span),
 
             Expr::Record { name, fields } => {
-                // look up the record type definition from the registry
-                let expected_fields_opt = self
-                    .registry
-                    .get_record_fields(&name.name)
-                    .map(<[RecordFieldInfo]>::to_vec);
+                let record_info = self.registry.get_record(&name.name).cloned();
 
-                if let Some(expected_fields) = expected_fields_opt {
-                    if fields.len() != expected_fields.len() {
+                if let Some(info) = record_info {
+                    if fields.len() != info.fields.len() {
                         return Err(TypeError::record_field_count(
                             &name.name,
-                            expected_fields.len(),
+                            info.fields.len(),
                             fields.len(),
                             span,
                         ));
+                    }
+                    let fresh_params: Vec<Type> = info.params.iter().map(|_| self.gen.fresh_type()).collect();
+                    let mut param_subst: HashMap<TypeVar, Type> = HashMap::new();
+                    for (p, fresh) in info.params.iter().zip(fresh_params.iter()) {
+                        param_subst.insert(*p, fresh.clone());
                     }
                     for field in fields {
                         let field_ty = self.infer(&field.value, env)?;
 
                         // Find the expected type for this field
-                        if let Some(expected) = expected_fields.iter().find(|f| f.name == field.name.name) {
+                        if let Some(expected) = info.fields.iter().find(|f| f.name == field.name.name) {
+                            let expected_ty = substitute_type(&expected.ty, &param_subst);
                             // unify with expected type (expected first for correct error messages)
-                            unify_with_subst(&expected.ty, &field_ty, &mut self.subst, field.span)?;
+                            unify_with_subst(&expected_ty, &field_ty, &mut self.subst, field.span)?;
                         } else {
                             return Err(TypeError::undefined_field(&name.name, &field.name.name, field.span));
                         }
                     }
-                    for expected in &expected_fields {
+                    for expected in &info.fields {
                         if !fields.iter().any(|f| f.name.name == expected.name) {
                             return Err(TypeError::missing_field(&name.name, &expected.name, span));
                         }
                     }
 
-                    Ok(Type::named(&name.name))
+                    if fresh_params.is_empty() {
+                        Ok(Type::named(&name.name))
+                    } else {
+                        Ok(Type::named_with(&name.name, fresh_params))
+                    }
                 } else {
                     // Fallback to structural typing if type not found, this handles cases where record type wasnt declared
                     let mut field_types = Vec::new();
@@ -216,6 +222,34 @@ impl TypeChecker {
                         }
                         Ok(Type::Record(name, fields))
                     }
+                    Type::Named(name, args) => match self.registry.get_record(&name).cloned() {
+                        Some(info) => {
+                            let mut param_subst: HashMap<TypeVar, Type> = HashMap::new();
+                            if args.len() == info.params.len() {
+                                for (p, a) in info.params.iter().zip(args.iter()) {
+                                    param_subst.insert(*p, a.clone());
+                                }
+                            } else {
+                                for p in &info.params {
+                                    param_subst.insert(*p, self.gen.fresh_type());
+                                }
+                            }
+                            for update in updates {
+                                let update_ty = self.infer(&update.value, env)?;
+                                match info.fields.iter().find(|f| f.name == update.name.name) {
+                                    Some(f) => {
+                                        let field_ty = substitute_type(&f.ty, &param_subst);
+                                        unify_with_subst(&field_ty, &update_ty, &mut self.subst, update.span)?;
+                                    }
+                                    None => {
+                                        return Err(TypeError::undefined_field(&name, &update.name.name, update.span))
+                                    }
+                                }
+                            }
+                            Ok(Type::Named(name, args))
+                        }
+                        None => Err(TypeError::not_a_record(Type::Named(name, args), base.span)),
+                    },
                     ty => Err(TypeError::not_a_record(ty, base.span)),
                 }
             }
@@ -503,6 +537,25 @@ impl TypeChecker {
                 }
                 Err(TypeError::undefined_field("tuple", field, span))
             }
+            Type::Named(name, args) => match self.registry.get_record(&name).cloned() {
+                Some(info) => {
+                    let mut param_subst: HashMap<TypeVar, Type> = HashMap::new();
+                    if args.len() == info.params.len() {
+                        for (p, a) in info.params.iter().zip(args.iter()) {
+                            param_subst.insert(*p, a.clone());
+                        }
+                    } else {
+                        for p in &info.params {
+                            param_subst.insert(*p, self.gen.fresh_type());
+                        }
+                    }
+                    match info.fields.iter().find(|f| f.name == field) {
+                        Some(f) => Ok(substitute_type(&f.ty, &param_subst)),
+                        None => Err(TypeError::undefined_field(&name, field, span)),
+                    }
+                }
+                None => Err(TypeError::not_a_record(Type::Named(name, args), span)),
+            },
             ty => Err(TypeError::not_a_record(ty, span)),
         }
     }
@@ -1358,5 +1411,40 @@ mod tests {
                     fn go(0, _: a, acc: [a]): [a] => acc; \
                     fn go(n: Int, x: a, acc: [a]): [a] => go(n - 1, x, [x | acc]);";
         assert!(check_module(code).is_ok());
+    }
+
+    #[test]
+    fn test_record_field_access_typechecks() {
+        let code = "type Point = { x: Int, y: Int }; \
+                    let p = Point { x: 1, y: 2 }; \
+                    let a: Int = p.x;";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_record_generic_at_two_types() {
+        let code = "type Box<a> = { value: a }; \
+                    let b = Box { value: 1 }; \
+                    let c = Box { value: \"hi\" }; \
+                    let n: Int = b.value; \
+                    let s: String = c.value;";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_record_update_typechecks() {
+        let code = "type Point = { x: Int, y: Int }; \
+                    let p = Point { x: 1, y: 2 }; \
+                    let q = { p | y: 99 }; \
+                    let a: Int = q.x;";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_record_undefined_field_rejected() {
+        let code = "type Point = { x: Int, y: Int }; \
+                    let p = Point { x: 1, y: 2 }; \
+                    let a = p.z;";
+        assert!(check_program(code).is_err());
     }
 }
