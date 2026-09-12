@@ -10,7 +10,6 @@ use ivy_syntax::pattern::{FieldPattern, Pattern};
 use ivy_syntax::span::{Span, Spanned};
 use ivy_syntax::types::TypeExpr;
 
-/// Parse source code into an AST.
 pub fn parse(source: &str) -> ParseResult<Program> {
     let tokens = lexer::lex(source).map_err(|e| match e {
         LexError::UnexpectedChar { ch, span } => ParseError::UnexpectedChar { ch, span },
@@ -30,36 +29,28 @@ pub fn parse(source: &str) -> ParseResult<Program> {
     parser.parse_program()
 }
 
-/// The parser state.
 struct Parser<'a> {
-    /// The token stream.
     tokens: &'a [Token],
-    /// Current position in the token stream.
     pos: usize,
 }
 
 impl<'a> Parser<'a> {
-    /// Create a new parser.
     fn new(tokens: &'a [Token]) -> Self {
         Self { tokens, pos: 0 }
     }
 
-    /// Get the current token.
     fn current(&self) -> &Token {
         self.tokens.get(self.pos).unwrap_or(&self.tokens[self.tokens.len() - 1])
     }
 
-    /// Peek at the current token kind.
     fn peek(&self) -> TokenKind {
         self.current().kind
     }
 
-    /// Check if we're at the end.
     fn is_at_end(&self) -> bool {
         self.peek() == TokenKind::Eof
     }
 
-    /// Advance to the next token.
     fn advance(&mut self) -> &Token {
         if !self.is_at_end() {
             self.pos += 1;
@@ -67,17 +58,14 @@ impl<'a> Parser<'a> {
         self.tokens.get(self.pos - 1).unwrap()
     }
 
-    /// Check if the current token matches a kind.
     fn check(&self, kind: TokenKind) -> bool {
         self.peek() == kind
     }
 
-    /// Check if the token current position + offset matches a kind.
     fn check_ahead(&self, offset: usize, kind: TokenKind) -> bool {
         self.tokens.get(self.pos + offset).is_some_and(|t| t.kind == kind)
     }
 
-    /// Consume a token if it matches, otherwise return an error.
     fn expect(&mut self, kind: TokenKind) -> ParseResult<&Token> {
         if self.check(kind) {
             Ok(self.advance())
@@ -86,7 +74,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Try to consume a token if it matches.
     fn match_token(&mut self, kind: TokenKind) -> Option<&Token> {
         if self.check(kind) {
             Some(self.advance())
@@ -95,7 +82,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Create a span from start to current position.
     fn span_from(&self, start: usize) -> Span {
         let end = if self.pos > 0 {
             self.tokens[self.pos - 1].span.end
@@ -944,6 +930,26 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
+    /// Parse pipe expressions: `a |> f` desugars to `f(a)` (reverse application)
+    fn parse_pipe_expr(&mut self) -> ParseResult<Spanned<Expr>> {
+        let start = self.current().span.start;
+        let mut left = self.parse_concat_expr()?;
+
+        while self.match_token(TokenKind::PipeGt).is_some() {
+            let right = self.parse_concat_expr()?;
+            let span = self.span_from(start);
+            left = Spanned::new(
+                Expr::Call {
+                    callee: Box::new(right),
+                    args: vec![left],
+                },
+                span,
+            );
+        }
+
+        Ok(left)
+    }
+
     /// Parse or expression: a or b
     fn parse_or_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
@@ -1021,7 +1027,7 @@ impl<'a> Parser<'a> {
     /// Parse comparison expression: a < b, a <= b, etc.
     fn parse_cmp_expr(&mut self) -> ParseResult<Spanned<Expr>> {
         let start = self.current().span.start;
-        let left = self.parse_concat_expr()?;
+        let left = self.parse_pipe_expr()?;
 
         let op = if self.match_token(TokenKind::Lt).is_some() {
             Some(BinOp::Lt)
@@ -1037,7 +1043,7 @@ impl<'a> Parser<'a> {
 
         if let Some(op) = op {
             let op_span = self.tokens[self.pos - 1].span;
-            let right = self.parse_concat_expr()?;
+            let right = self.parse_pipe_expr()?;
             let span = self.span_from(start);
             return Ok(Spanned::new(
                 Expr::Binary {

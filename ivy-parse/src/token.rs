@@ -124,6 +124,8 @@ pub enum TokenKind {
     Dot,
     /// |
     Pipe,
+    /// |>
+    PipeGt,
 
     // Delimiters
     /// (
@@ -268,6 +270,7 @@ impl fmt::Display for TokenKind {
             TokenKind::Colon => "':'",
             TokenKind::Dot => "'.'",
             TokenKind::Pipe => "'|'",
+            TokenKind::PipeGt => "'|>'",
             TokenKind::LParen => "'('",
             TokenKind::RParen => "')'",
             TokenKind::LBrace => "'{'",

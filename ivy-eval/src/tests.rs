@@ -175,6 +175,27 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_pipe_op() {
+        assert!(matches!(eval("fn inc(x) => x + 1; 5 |> inc;"), Ok(Value::Int(6))));
+        assert!(matches!(
+            eval("fn inc(x) => x + 1; fn double(x) => x * 2; 5 |> inc |> double;"),
+            Ok(Value::Int(12))
+        ));
+        assert!(matches!(
+            eval("fn add(x, y) => x + y; 5 |> add(10);"),
+            Ok(Value::Int(15))
+        ));
+        assert!(matches!(
+            eval("fn double(x) => x * 2; 2 + 3 |> double;"),
+            Ok(Value::Int(10))
+        ));
+        assert!(matches!(
+            eval("fn inc(x) => x + 1; 5 |> inc == 6;"),
+            Ok(Value::Bool(true))
+        ));
+    }
+
+    #[test]
     fn test_char_builtins() {
         assert!(matches!(eval_no_prelude("__charIsDigit('7');"), Ok(Value::Bool(true))));
         assert!(matches!(eval_no_prelude("__charIsDigit('x');"), Ok(Value::Bool(false))));
