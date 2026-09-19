@@ -32,14 +32,13 @@ pub enum TypeError {
     },
 
     #[error("undefined variable: {name}")]
-    #[diagnostic(
-        code(ivy::types::undefined_variable),
-        help("is `{name}` defined in scope? check imports and spelling")
-    )]
+    #[diagnostic(code(ivy::types::undefined_variable))]
     UndefinedVariable {
         name: String,
         #[label("'{name}' not found")]
         span: Span,
+        #[help]
+        help: Option<String>,
     },
 
     #[error("undefined type: {name}")]
@@ -442,10 +441,15 @@ impl TypeError {
         TypeError::InfiniteType { var, ty, span }
     }
 
-    pub fn undefined_variable(name: &str, span: Span) -> TypeError {
+    pub fn undefined_variable(name: &str, span: Span, suggestion: Option<String>) -> TypeError {
+        let help = Some(match suggestion {
+            Some(s) => format!("did you mean `{}`?", s),
+            None => format!("is `{}` defined in scope? check imports and spelling", name),
+        });
         TypeError::UndefinedVariable {
             name: name.to_string(),
             span,
+            help,
         }
     }
 
