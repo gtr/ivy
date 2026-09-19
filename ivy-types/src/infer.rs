@@ -11,6 +11,7 @@ use crate::error::{TypeError, TypeResult};
 use crate::exhaustiveness;
 use crate::registry::{ImplInfo, TraitInfo, TypeRegistry};
 use crate::subst::Subst;
+use crate::suggest::did_you_mean;
 use crate::types::{Scheme, TraitConstraint, Type, TypeVar};
 use crate::unify::unify_with_subst;
 use ivy_syntax::{
@@ -114,7 +115,10 @@ impl TypeChecker {
                         let scheme = scheme.clone();
                         Ok(self.instantiate(&scheme, span))
                     }
-                    None => Err(TypeError::undefined_variable(name, span)),
+                    None => {
+                        let suggestion = did_you_mean(name, env.binding_names().filter(|n| !n.starts_with("__")));
+                        Err(TypeError::undefined_variable(name, span, suggestion))
+                    }
                 }
             }
 

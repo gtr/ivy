@@ -2,9 +2,6 @@ use crate::subst::Subst;
 use crate::types::{Scheme, Type, TypeVar};
 use std::collections::{HashMap, HashSet};
 
-/// Builtin schemes use canonical bound vars in this range. Anything below this
-/// is reserved for the user's `TypeVarGen` to produce fresh vars without
-/// colliding with un-instantiated builtin schemes still in scope.
 pub const BUILTIN_VAR_OFFSET: u32 = 1_000_000;
 
 /// A type environment mapping names to type schemes
@@ -17,7 +14,6 @@ pub struct TypeEnv {
 }
 
 impl TypeEnv {
-    /// Create an empty type environment
     pub fn new() -> TypeEnv {
         TypeEnv {
             bindings: HashMap::new(),
@@ -362,42 +358,38 @@ impl TypeEnv {
         env
     }
 
-    /// Look up a variable's type scheme
     pub fn get(&self, name: &str) -> Option<&Scheme> {
         self.bindings.get(name)
     }
 
-    /// Insert a new binding
+    pub fn binding_names(&self) -> impl Iterator<Item = &str> {
+        self.bindings.keys().map(String::as_str)
+    }
+
     pub fn insert(&mut self, name: String, scheme: Scheme) {
         self.bindings.insert(name, scheme);
     }
 
-    /// Remove a binding
     pub fn remove(&mut self, name: &str) {
         self.bindings.remove(name);
     }
 
-    /// Insert a module with its exported type schemes
     pub fn insert_module(&mut self, name: String, exports: HashMap<String, Scheme>) {
         self.modules.insert(name, exports);
     }
 
-    /// Get all exports of a module
     pub fn get_module(&self, name: &str) -> Option<&HashMap<String, Scheme>> {
         self.modules.get(name)
     }
 
-    /// Get a specific export from a module
     pub fn get_module_export(&self, module: &str, name: &str) -> Option<&Scheme> {
         self.modules.get(module).and_then(|exports| exports.get(name))
     }
 
-    /// Check if a name refers to a loaded module
     pub fn is_module(&self, name: &str) -> bool {
         self.modules.contains_key(name)
     }
 
-    /// Create an extended environment with additional bindings
     pub fn extend(&self, bindings: Vec<(String, Scheme)>) -> TypeEnv {
         let mut new_env = self.clone();
         for (name, scheme) in bindings {
@@ -406,7 +398,6 @@ impl TypeEnv {
         new_env
     }
 
-    /// Apply a substitution to all type schemes in the environment
     pub fn apply(&self, subst: &Subst) -> TypeEnv {
         TypeEnv {
             bindings: self
@@ -418,7 +409,6 @@ impl TypeEnv {
         }
     }
 
-    /// Collect all free type variables in the environment.
     pub fn free_vars(&self) -> HashSet<TypeVar> {
         self.bindings
             .values()
@@ -426,7 +416,6 @@ impl TypeEnv {
             .collect()
     }
 
-    /// Generalize a type into a type scheme.
     pub fn generalize(&self, ty: &Type) -> Scheme {
         let env_vars = self.free_vars();
         let ty_vars = ty.free_vars();
@@ -447,7 +436,6 @@ impl Default for TypeEnv {
     }
 }
 
-/// Type variable generator for fresh variables
 #[derive(Debug, Clone)]
 pub struct TypeVarGen {
     next_id: u32,
@@ -458,14 +446,12 @@ impl TypeVarGen {
         TypeVarGen { next_id: 0 }
     }
 
-    /// Generate a fresh type variable
     pub fn fresh(&mut self) -> TypeVar {
         let var = TypeVar(self.next_id);
         self.next_id += 1;
         var
     }
 
-    /// Generate a fresh type variable as a Type
     pub fn fresh_type(&mut self) -> Type {
         Type::Var(self.fresh())
     }

@@ -7,6 +7,7 @@ pub mod exhaustiveness;
 pub mod infer;
 pub mod registry;
 pub mod subst;
+pub mod suggest;
 pub mod types;
 pub mod unify;
 pub use env::{TypeEnv, TypeVarGen};
