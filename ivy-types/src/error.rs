@@ -214,7 +214,10 @@ pub enum TypeError {
     },
 
     #[error("trait `{trait_name}` is not implemented for type `{ty}`")]
-    #[diagnostic(code(ivy::types::no_impl_found))]
+    #[diagnostic(
+        code(ivy::types::no_impl_found),
+        help("implement it, example: `impl {trait_name} for {ty} {{ ... }}`")
+    )]
     NoImplFound {
         trait_name: String,
         ty: Type,
@@ -234,14 +237,14 @@ pub enum TypeError {
         existing_span: Span,
     },
 
-    #[error("ambiguous type for trait `{}`", constraint.trait_name)]
+    #[error("ambiguous type: can't tell which `{}` instance to use", constraint.trait_name)]
     #[diagnostic(
         code(ivy::types::ambiguous_constraint),
-        help("add a type annotation to disambiguate")
+        help("annotate the type so it's concrete. example: `(expr : Int)` or `let x: [Int] = ...`")
     )]
     AmbiguousConstraint {
         constraint: TraitConstraint,
-        #[label("type variable in `{constraint}` cannot be inferred")]
+        #[label("the type here is unresolved so the `{}` instance is ambiguous", constraint.trait_name)]
         span: Span,
     },
 
