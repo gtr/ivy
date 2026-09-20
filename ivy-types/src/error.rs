@@ -5,8 +5,6 @@ use thiserror::Error;
 
 pub type TypeResult<T> = Result<T, TypeError>;
 
-/// Backwards-compatible alias for use sites that pattern-match on a `kind`.
-/// Prefer matching on `TypeError` variants directly.
 pub type TypeErrorKind = TypeError;
 
 #[derive(Error, Debug, Clone, Diagnostic)]
@@ -92,6 +90,17 @@ pub enum TypeError {
         record: String,
         field: String,
         #[label("field '{field}' not found")]
+        span: Span,
+    },
+
+    #[error("cannot infer the record type for field `.{field}`")]
+    #[diagnostic(
+        code(ivy::types::ambiguous_field),
+        help("annotate the value so its record type is known. example: `fn (r: SomeRecord) => r.{field}`")
+    )]
+    AmbiguousField {
+        field: String,
+        #[label("the type of the value accessed here is unknown")]
         span: Span,
     },
 
@@ -321,6 +330,7 @@ impl TypeError {
             | TypeError::NotCallable { span, .. }
             | TypeError::NotARecord { span, .. }
             | TypeError::UndefinedField { span, .. }
+            | TypeError::AmbiguousField { span, .. }
             | TypeError::NotIndexable { span, .. }
             | TypeError::PatternMismatch { span, .. }
             | TypeError::OrPatternBindingMismatch { span, .. }
@@ -485,6 +495,13 @@ impl TypeError {
 
     pub fn not_a_record(ty: Type, span: Span) -> TypeError {
         TypeError::NotARecord { ty, span }
+    }
+
+    pub fn ambiguous_field(field: &str, span: Span) -> TypeError {
+        TypeError::AmbiguousField {
+            field: field.to_string(),
+            span,
+        }
     }
 
     pub fn undefined_field(record: &str, field: &str, span: Span) -> TypeError {

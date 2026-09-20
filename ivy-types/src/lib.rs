@@ -135,6 +135,8 @@ fn check_decl(
                 unify::unify_with_subst(&value_ty, &existing_ty, &mut checker.subst, decl.span)?;
             }
 
+            checker.resolve_field_obligations()?;
+
             if let Pattern::Var(ident) = &pattern.node {
                 let final_ty = checker.finalize(&value_ty);
                 *env = env.apply(&checker.subst);
@@ -769,6 +771,8 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
         let existing_ty = checker.instantiate(&existing, fn_decl.name.span);
         unify::unify_with_subst(&fn_ty, &existing_ty, &mut checker.subst, fn_decl.name.span)?;
     }
+
+    checker.resolve_field_obligations()?;
 
     let final_ty = checker.finalize(&fn_ty);
     *env = env.apply(&checker.subst);
