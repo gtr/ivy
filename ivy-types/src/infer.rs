@@ -23,6 +23,14 @@ use ivy_syntax::{
     Span, Spanned,
 };
 use std::collections::{HashMap, HashSet};
+use std::mem;
+
+struct FieldObligation {
+    obj: Type,
+    field: String,
+    result: Type,
+    span: Span,
+}
 
 pub struct TypeChecker {
     gen: TypeVarGen,
@@ -33,6 +41,8 @@ pub struct TypeChecker {
     pub constraints: Vec<(TraitConstraint, Span)>,
     /// Constraints assumed in the current context (where-clauses, signatures)
     pub assumed_constraints: Vec<TraitConstraint>,
+    /// Deferred field accesses on not-yet-known record types
+    field_obligations: Vec<FieldObligation>,
 }
 
 impl TypeChecker {
@@ -45,6 +55,7 @@ impl TypeChecker {
             loaded_modules: HashSet::new(),
             constraints: Vec::new(),
             assumed_constraints: Vec::new(),
+            field_obligations: Vec::new(),
         };
         checker.register_builtin_traits();
         checker
@@ -508,7 +519,6 @@ impl TypeChecker {
         Ok(current)
     }
 
-    /// Infer the type of a field access
     fn infer_field(&mut self, object: &Spanned<Expr>, field: &str, env: &TypeEnv, span: Span) -> TypeResult<Type> {
         if let Expr::Var(ident) = &object.node {
             let module_name = &ident.name;
@@ -524,6 +534,21 @@ impl TypeChecker {
         let obj_ty = self.infer(object, env)?;
         let resolved = self.subst.apply(&obj_ty);
 
+        if let Type::Var(_) = resolved {
+            let result = self.gen.fresh_type();
+            self.field_obligations.push(FieldObligation {
+                obj: resolved,
+                field: field.to_string(),
+                result: result.clone(),
+                span,
+            });
+            return Ok(result);
+        }
+
+        self.lookup_field(resolved, field, span)
+    }
+
+    fn lookup_field(&mut self, resolved: Type, field: &str, span: Span) -> TypeResult<Type> {
         match resolved {
             Type::Record(name, fields) => {
                 for (field_name, field_ty) in &fields {
@@ -564,7 +589,18 @@ impl TypeChecker {
         }
     }
 
-    /// Infer the type of an index access.
+    pub fn resolve_field_obligations(&mut self) -> TypeResult<()> {
+        for ob in mem::take(&mut self.field_obligations) {
+            let resolved = self.subst.apply(&ob.obj);
+            if let Type::Var(_) = resolved {
+                return Err(TypeError::ambiguous_field(&ob.field, ob.span));
+            }
+            let field_ty = self.lookup_field(resolved, &ob.field, ob.span)?;
+            unify_with_subst(&ob.result, &field_ty, &mut self.subst, ob.span)?;
+        }
+        Ok(())
+    }
+
     fn infer_index(
         &mut self,
         object: &Spanned<Expr>,
@@ -1449,6 +1485,20 @@ mod tests {
         let code = "type Point = { x: Int, y: Int }; \
                     let p = Point { x: 1, y: 2 }; \
                     let a = p.z;";
+        assert!(check_program(code).is_err());
+    }
+
+    #[test]
+    fn test_field_access_on_inferred_lambda_param() {
+        let code = "type Box = { value: Int }; \
+                    fn apply(f: Box -> Int, b: Box): Int => f(b); \
+                    let r = apply(fn (x) => x.value, Box { value: 5 });";
+        assert!(check_program(code).is_ok());
+    }
+
+    #[test]
+    fn test_unresolvable_field_access_is_error() {
+        let code = "fn get(r) => r.value;";
         assert!(check_program(code).is_err());
     }
 }
