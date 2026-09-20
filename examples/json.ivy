@@ -11,13 +11,16 @@
 
 
 type Json =
-| JNull
-| JBool(Bool)
-| JNum(Int)
-| JStr(String)
-| JArr([Json])
-| JObj([(String, Json)])
-;
+    | JNull
+    | JBool(Bool)
+    | JNum(Int)
+    | JStr(String)
+    | JArr([Json])
+    | JObj([(String, Json)]);
+
+type Parsed<a> = { value: a, rest: [Char] };
+
+fn ok(v: a, r: [Char]): Option<Parsed<a>> => Some(Parsed { value: v, rest: r });
 
 fn andThen(None, f: a -> Option<b>): Option<b> => None;
 fn andThen(Some(x), f: a -> Option<b>): Option<b> => f(x);
@@ -25,82 +28,77 @@ fn andThen(Some(x), f: a -> Option<b>): Option<b> => f(x);
 fn orElse(Some(x), _: Option<a>): Option<a> => Some(x);
 fn orElse(None, alt: Option<a>): Option<a> => alt;
 
-fn skipWs([]): [Char] => [];
-fn skipWs([c | cs]): [Char] => if isWhitespace(c) then skipWs(cs) else [c | cs];
+fn skipWhitespace([]): [Char] => [];
+fn skipWhitespace([c | cs]): [Char] => if isWhitespace(c) then skipWhitespace(cs) else [c | cs];
 
-fn matchKw(cs: [Char], []): Option<[Char]> => Some(cs);
-fn matchKw([], [_ | _]): Option<[Char]> => None;
-fn matchKw([c | cs], [k | ks]): Option<[Char]> => if c == k then matchKw(cs, ks) else None;
+fn matchKeyword(cs: [Char], []): Option<[Char]> => Some(cs);
+fn matchKeyword([], [_ | _]): Option<[Char]> => None;
+fn matchKeyword([c | cs], [k | ks]): Option<[Char]> => if c == k then matchKeyword(cs, ks) else None;
 
-fn parseDigits([], acc: Int): (Int, [Char]) => (acc, []);
-fn parseDigits([c | cs], acc: Int): (Int, [Char]) =>
-  if isDigit(c) then parseDigits(cs, acc * 10 + digitToInt(c)) else (acc, [c | cs]);
+fn parseDigits([], acc: Int): Parsed<Int> => Parsed { value: acc, rest: [] };
+fn parseDigits([c | cs], acc: Int): Parsed<Int> =>
+  if isDigit(c) then parseDigits(cs, acc * 10 + digitToInt(c))
+  else Parsed { value: acc, rest: [c | cs] };
 
--- Assumes the opening quote is already consumed; stops at the closing quote
-fn parseStr([], acc: String): (String, [Char]) => (acc, []);
-fn parseStr(['"' | cs], acc: String): (String, [Char]) => (acc, cs);
-fn parseStr([c | cs], acc: String): (String, [Char]) => parseStr(cs, acc ++ charToString(c));
+fn parseStr([], acc: String): Parsed<String> => Parsed { value: acc, rest: [] };
+fn parseStr(['"' | cs], acc: String): Parsed<String> => Parsed { value: acc, rest: cs };
+fn parseStr([c | cs], acc: String): Parsed<String> => parseStr(cs, acc ++ charToString(c));
 
-fn keyword(cs: [Char], word: String, value: Json): Option<(Json, [Char])> =>
-  match matchKw(cs, chars(word)) with
-  | Some(rest) -> Some((value, rest))
+fn keyword(cs: [Char], word: String, val: Json): Option<Parsed<Json>> =>
+  match matchKeyword(cs, chars(word)) with
+  | Some(rest) -> ok(val, rest)
   | None -> None
 end;
 
-fn parseValue(cs0: [Char]): Option<(Json, [Char])> => match skipWs(cs0) with
+fn parseValue(input: [Char]): Option<Parsed<Json>> => match skipWhitespace(input) with
   | [] -> None
-  | ['"' | rest] -> do { let (s, more) = parseStr(rest, ""); Some((JStr(s), more)) }
+  | ['"' | rest] -> let s = parseStr(rest, "") in ok(JStr(s.value), s.rest)
   | ['[' | rest] -> parseArray(rest)
   | ['{' | rest] -> parseObject(rest)
-  | ['-' | rest] -> do { let (n, more) = parseDigits(rest, 0); Some((JNum(0 - n), more)) }
+  | ['-' | rest] -> let n = parseDigits(rest, 0) in ok(JNum(0 - n.value), n.rest)
   | [c | rest] ->
-      if isDigit(c) then do { let (n, more) = parseDigits([c | rest], 0); Some((JNum(n), more)) }
+      if isDigit(c) then let n = parseDigits([c | rest], 0) in ok(JNum(n.value), n.rest)
       else orElse(keyword([c | rest], "true", JBool(true)),
            orElse(keyword([c | rest], "false", JBool(false)),
                   keyword([c | rest], "null", JNull)))
 end;
 
-fn parseArray(cs0: [Char]): Option<(Json, [Char])> => match skipWs(cs0) with
-  | [']' | rest] -> Some((JArr([]), rest))
+fn parseArray(input: [Char]): Option<Parsed<Json>> => match skipWhitespace(input) with
+  | [']' | rest] -> ok(JArr([]), rest)
   | cs -> parseArrayElems(cs, [])
 end;
 
-fn parseArrayElems(cs: [Char], acc: [Json]): Option<(Json, [Char])> =>
-  andThen(parseValue(cs), fn (pair) => do {
-    let (v, rest) = pair;
-    match skipWs(rest) with
-    | [',' | more] -> parseArrayElems(more, concat(acc, [v]))
-    | [']' | more] -> Some((JArr(concat(acc, [v])), more))
+fn parseArrayElems(cs: [Char], acc: [Json]): Option<Parsed<Json>> =>
+  andThen(parseValue(cs), fn (p) =>
+    match skipWhitespace(p.rest) with
+    | [',' | more] -> parseArrayElems(more, concat(acc, [p.value]))
+    | [']' | more] -> ok(JArr(concat(acc, [p.value])), more)
     | _ -> None
-    end
-  });
+    end);
 
-fn parseObject(cs0: [Char]): Option<(Json, [Char])> => match skipWs(cs0) with
-  | ['}' | rest] -> Some((JObj([]), rest))
+fn parseObject(input: [Char]): Option<Parsed<Json>> => match skipWhitespace(input) with
+  | ['}' | rest] -> ok(JObj([]), rest)
   | cs -> parseObjectEntries(cs, [])
 end;
 
-fn parseObjectEntries(cs0: [Char], acc: [(String, Json)]): Option<(Json, [Char])> =>
-  match skipWs(cs0) with
-  | ['"' | rest] -> do {
-      let (key, afterKey) = parseStr(rest, "");
-      match skipWs(afterKey) with
-      | [':' | more] -> andThen(parseValue(more), fn (pair) => do {
-          let (v, rest) = pair;
-          match skipWs(rest) with
-          | [',' | more2] -> parseObjectEntries(more2, concat(acc, [(key, v)]))
-          | ['}' | more2] -> Some((JObj(concat(acc, [(key, v)])), more2))
+fn parseObjectEntries(input: [Char], acc: [(String, Json)]): Option<Parsed<Json>> =>
+  match skipWhitespace(input) with
+  | ['"' | rest] ->
+      let k = parseStr(rest, "") in
+      match skipWhitespace(k.rest) with
+      | [':' | more] -> andThen(parseValue(more), fn (v) =>
+          match skipWhitespace(v.rest) with
+          | [',' | more2] -> parseObjectEntries(more2, concat(acc, [(k.value, v.value)]))
+          | ['}' | more2] -> ok(JObj(concat(acc, [(k.value, v.value)])), more2)
           | _ -> None
-          end
-        })
+          end)
       | _ -> None
       end
-    }
   | _ -> None
 end;
 
 fn parse(s: String): Option<Json> =>
-  andThen(parseValue(chars(s)), fn (pair) => do { let (v, _) = pair; Some(v) });
+  andThen(parseValue(chars(s)), fn (p) => Some(p.value));
 
 fn showJson(JNull): String => "null";
 fn showJson(JBool(b)): String => show(b);
