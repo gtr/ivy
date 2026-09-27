@@ -3,6 +3,7 @@ use std::error::Error as StdError;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
+use std::thread::Builder;
 
 use miette::{Diagnostic, NamedSource};
 use rustyline::error::ReadlineError;
@@ -18,6 +19,7 @@ const BLUE: &str = "\x1b[36m";
 const RESET: &str = "\x1b[0m";
 
 const PRELUDE_FILE: &str = "lib/prelude.ivy";
+const MB: usize = 1024 * 1024;
 
 /// Wraps any `Diagnostic` error with the source code so miette can render
 /// labels against it. The inner error provides its own `#[label]` attributes.
@@ -473,7 +475,7 @@ fn main() {
     let mut show_tree = false;
     let mut type_check = false;
     let mut no_prelude = false;
-    let mut file_path: Option<&str> = None;
+    let mut file_path: Option<String> = None;
 
     let mut i = 1;
     while i < args.len() {
@@ -492,7 +494,7 @@ fn main() {
                 no_prelude = true;
             }
             arg if !arg.starts_with('-') => {
-                file_path = Some(arg);
+                file_path = Some(arg.to_string());
             }
             arg => {
                 eprintln!("Unknown option: {}", arg);
@@ -503,8 +505,13 @@ fn main() {
         i += 1;
     }
 
-    match file_path {
-        Some(path) => run_file(path, show_tree, type_check, no_prelude),
-        None => repl(no_prelude),
-    }
+    // TODO(gtr): temporary until we build a vm interpreter
+    let child = Builder::new()
+        .stack_size(256 * MB)
+        .spawn(move || match file_path {
+            Some(path) => run_file(&path, show_tree, type_check, no_prelude),
+            None => repl(no_prelude),
+        })
+        .expect("failed to spawn interpreter thread");
+    child.join().expect("interpreter thread panicked");
 }
