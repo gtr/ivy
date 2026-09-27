@@ -166,49 +166,42 @@ pub static BUILTIN_SHOW: BuiltinFn = BuiltinFn {
 // Type conversion intrinsics
 // ============================================================================
 
-/// Convert Int to Float
 pub static BUILTIN_FLOAT_FROM_INT: BuiltinFn = BuiltinFn {
     name: "__floatFromInt",
     arity: 1,
     func: builtin_float_from_int,
 };
 
-/// Convert Float to Int (truncates toward zero)
 pub static BUILTIN_FLOAT_TO_INT: BuiltinFn = BuiltinFn {
     name: "__floatToInt",
     arity: 1,
     func: builtin_float_to_int,
 };
 
-/// Convert Float to String
 pub static BUILTIN_FLOAT_TO_STRING: BuiltinFn = BuiltinFn {
     name: "__floatToString",
     arity: 1,
     func: builtin_float_to_string,
 };
 
-/// Parse String to Int
 pub static BUILTIN_STRING_TO_INT: BuiltinFn = BuiltinFn {
     name: "__stringToInt",
     arity: 1,
     func: builtin_string_to_int,
 };
 
-/// Parse String to Float
 pub static BUILTIN_STRING_TO_FLOAT: BuiltinFn = BuiltinFn {
     name: "__stringToFloat",
     arity: 1,
     func: builtin_string_to_float,
 };
 
-/// Try to parse String to Int, returns Option Int
 pub static BUILTIN_TRY_STRING_TO_INT: BuiltinFn = BuiltinFn {
     name: "__tryStringToInt",
     arity: 1,
     func: builtin_try_string_to_int,
 };
 
-/// Try to parse String to Float, returns Option Float
 pub static BUILTIN_TRY_STRING_TO_FLOAT: BuiltinFn = BuiltinFn {
     name: "__tryStringToFloat",
     arity: 1,
@@ -282,7 +275,6 @@ fn builtin_string_to_float(args: &[Value]) -> EvalResult<Value> {
     }
 }
 
-/// Helper to create Option None value
 fn option_none() -> Value {
     Value::Constructor {
         type_name: "Option".to_string(),
@@ -291,7 +283,6 @@ fn option_none() -> Value {
     }
 }
 
-/// Helper to create Option Some value
 fn option_some(value: Value) -> Value {
     Value::Constructor {
         type_name: "Option".to_string(),
@@ -420,6 +411,24 @@ pub static BUILTIN_SQRT: BuiltinFn = BuiltinFn {
     func: builtin_sqrt,
 };
 
+pub static BUILTIN_SIN: BuiltinFn = BuiltinFn {
+    name: "__sin",
+    arity: 1,
+    func: builtin_sin,
+};
+
+pub static BUILTIN_COS: BuiltinFn = BuiltinFn {
+    name: "__cos",
+    arity: 1,
+    func: builtin_cos,
+};
+
+pub static BUILTIN_TAN: BuiltinFn = BuiltinFn {
+    name: "__tan",
+    arity: 1,
+    func: builtin_tan,
+};
+
 pub static BUILTIN_FLOOR: BuiltinFn = BuiltinFn {
     name: "__floor",
     arity: 1,
@@ -509,6 +518,30 @@ fn builtin_sqrt(args: &[Value]) -> EvalResult<Value> {
             span: Span::default(),
         }),
     }
+}
+
+fn as_f64(v: &Value) -> EvalResult<f64> {
+    match v {
+        Value::Int(n) => Ok(*n as f64),
+        Value::Float(f) => Ok(*f),
+        v => Err(EvalError::TypeError {
+            expected: "Int or Float".to_string(),
+            found: v.type_name(),
+            span: Span::default(),
+        }),
+    }
+}
+
+fn builtin_sin(args: &[Value]) -> EvalResult<Value> {
+    Ok(Value::Float(as_f64(&args[0])?.sin()))
+}
+
+fn builtin_cos(args: &[Value]) -> EvalResult<Value> {
+    Ok(Value::Float(as_f64(&args[0])?.cos()))
+}
+
+fn builtin_tan(args: &[Value]) -> EvalResult<Value> {
+    Ok(Value::Float(as_f64(&args[0])?.tan()))
 }
 
 fn builtin_floor(args: &[Value]) -> EvalResult<Value> {

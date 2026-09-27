@@ -45,6 +45,11 @@ pub fn pow(base: Float, exp: Float): Float => __pow(base, exp);
 -- Square root
 pub fn sqrt(x: Float): Float => __sqrt(x);
 
+-- Trigonometric functions (angles in radians)
+pub fn sin(x: Float): Float => __sin(x);
+pub fn cos(x: Float): Float => __cos(x);
+pub fn tan(x: Float): Float => __tan(x);
+
 -- Integer power (recursive)
 pub fn powInt(base: Int, exp: Int): Int =>
   if exp == 0 then 1

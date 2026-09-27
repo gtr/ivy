@@ -214,6 +214,11 @@ impl TypeEnv {
         // __sqrt: Float -> Float
         env.insert("__sqrt".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Float)));
 
+        // __sin / __cos / __tan: Float -> Float (radians)
+        env.insert("__sin".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Float)));
+        env.insert("__cos".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Float)));
+        env.insert("__tan".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Float)));
+
         // __floor: Float -> Int
         env.insert("__floor".to_string(), Scheme::mono(Type::fun(Type::Float, Type::Int)));
 
