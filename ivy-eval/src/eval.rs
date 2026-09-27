@@ -341,6 +341,9 @@ impl Interpreter {
         self.env.define("__max", Value::Builtin(BUILTIN_MAX.clone()), false);
         self.env.define("__pow", Value::Builtin(BUILTIN_POW.clone()), false);
         self.env.define("__sqrt", Value::Builtin(BUILTIN_SQRT.clone()), false);
+        self.env.define("__sin", Value::Builtin(BUILTIN_SIN.clone()), false);
+        self.env.define("__cos", Value::Builtin(BUILTIN_COS.clone()), false);
+        self.env.define("__tan", Value::Builtin(BUILTIN_TAN.clone()), false);
         self.env.define("__floor", Value::Builtin(BUILTIN_FLOOR.clone()), false);
         self.env.define("__ceil", Value::Builtin(BUILTIN_CEIL.clone()), false);
         self.env.define("__round", Value::Builtin(BUILTIN_ROUND.clone()), false);

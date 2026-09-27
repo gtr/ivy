@@ -227,6 +227,13 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_trig_builtins() {
+        assert!(matches!(eval_no_prelude("__cos(0.0);"), Ok(Value::Float(f)) if f == 1.0));
+        assert!(matches!(eval_no_prelude("__sin(0.0);"), Ok(Value::Float(f)) if f == 0.0));
+        assert!(matches!(eval_no_prelude("__cos(0);"), Ok(Value::Float(f)) if f == 1.0));
+    }
+
+    #[test]
     fn test_str_chars_builtin() {
         if let Ok(Value::List(l)) = eval_no_prelude("__strChars(\"hi\");") {
             let vec = l.to_vec();
