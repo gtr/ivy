@@ -10,6 +10,8 @@
 -------------------------------------------------------------------------------
 
 
+import String;
+
 type Json =
     | JNull
     | JBool(Bool)
@@ -45,7 +47,7 @@ fn parseStr(['"' | cs], acc: String): Parsed<String> => Parsed { value: acc, res
 fn parseStr([c | cs], acc: String): Parsed<String> => parseStr(cs, acc ++ charToString(c));
 
 fn keyword(cs: [Char], word: String, val: Json): Option<Parsed<Json>> =>
-  match matchKeyword(cs, chars(word)) with
+  match matchKeyword(cs, String.chars(word)) with
   | Some(rest) -> ok(val, rest)
   | None -> None
 end;
@@ -98,7 +100,7 @@ fn parseObjectEntries(input: [Char], acc: [(String, Json)]): Option<Parsed<Json>
 end;
 
 fn parse(s: String): Option<Json> =>
-  andThen(parseValue(chars(s)), fn (p) => Some(p.value));
+  andThen(parseValue(String.chars(s)), fn (p) => Some(p.value));
 
 fn showJson(JNull): String => "null";
 fn showJson(JBool(b)): String => show(b);

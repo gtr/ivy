@@ -234,8 +234,6 @@ fn not(false): Bool => true;
 -- Char Functions
 -- =============================================================================
 
-fn chars(s: String): [Char] => __strChars(s);
-
 fn charToString(c: Char): String => __charToString(c);
 fn charToInt(c: Char): Int => __charToInt(c);
 fn intToChar(n: Int): Char => __intToChar(n);
