@@ -34,7 +34,7 @@ fn notEmpty?(s: String): Bool => __strLength(s) > 0;
 fn contains(haystack: String, needle: String): Bool => __strContains(haystack, needle);
 
 -- Get a substring from start index to end index (exclusive)
-fn substring(s: String, start: Int, end: Int): String => __strSubstring(s, start, end);
+fn substring(s: String, start: Int, stop: Int): String => __strSubstring(s, start, stop);
 
 -- Check if a string starts with a prefix
 fn startsWith(s: String, prefix: String): Bool => __strStartsWith(s, prefix);
@@ -57,7 +57,7 @@ fn toLower(s: String): String => __strToLower(s);
 -- =============================================================================
 
 -- Replace all occurrences of a substring
-fn replace(s: String, from: String, to: String): String => __strReplace(s, from, to);
+fn replace(s: String, target: String, to: String): String => __strReplace(s, target, to);
 
 -- Split a string by a delimiter
 fn split(s: String, delimiter: String): [String] => __strSplit(s, delimiter);
@@ -82,6 +82,9 @@ fn repeat(s: String, n: Int): String =>
 -- Character Operations
 -- =============================================================================
 
+-- Explode a string into its list of characters
+pub fn chars(s: String): [Char] => __strChars(s);
+
 -- Get the first character of a string (as a string)
 fn first(s: String): Option<String> =>
   if __strLength(s) == 0 then None
@@ -89,7 +92,7 @@ fn first(s: String): Option<String> =>
 
 -- Get the last character of a string (as a string)
 fn last(s: String): Option<String> =>
-  let len = __strLength(s);
+  let len = __strLength(s) in
   if len == 0 then None
   else Some(__strSubstring(s, len - 1, len));
 

@@ -45,10 +45,18 @@ pub fn pow(base: Float, exp: Float): Float => __pow(base, exp);
 -- Square root
 pub fn sqrt(x: Float): Float => __sqrt(x);
 
+pub let pi = 3.14159265358979;
+
 -- Trigonometric functions (angles in radians)
 pub fn sin(x: Float): Float => __sin(x);
 pub fn cos(x: Float): Float => __cos(x);
 pub fn tan(x: Float): Float => __tan(x);
+
+-- Convert degrees to radians
+pub fn degToRad(degrees: Float): Float => degrees * pi / 180.0;
+
+-- Convert radians to degrees
+pub fn radToDeg(radians: Float): Float => radians * 180.0 / pi;
 
 -- Integer power (recursive)
 pub fn powInt(base: Int, exp: Int): Int =>
