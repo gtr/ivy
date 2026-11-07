@@ -8,6 +8,23 @@ pub type TypeResult<T> = Result<T, TypeError>;
 pub type TypeErrorKind = TypeError;
 
 #[derive(Error, Debug, Clone, Diagnostic)]
+pub enum TypeWarning {
+    #[error("unreachable pattern in `{name}`")]
+    #[diagnostic(
+        code(ivy::types::unreachable_pattern),
+        severity(Warning),
+        help("an earlier clause already matches every value this one covers. remove it or move the more specific clause above the catch-all")
+    )]
+    UnreachableClause {
+        name: String,
+        #[label(primary, "this clause can never match")]
+        span: Span,
+        #[label("already covered here")]
+        covered_by: Option<Span>,
+    },
+}
+
+#[derive(Error, Debug, Clone, Diagnostic)]
 pub enum TypeError {
     #[error("type mismatch: expected {expected}, found {found}")]
     #[diagnostic(code(ivy::types::mismatch))]

@@ -5,14 +5,15 @@ use std::path::{Path, PathBuf};
 use std::process;
 use std::thread::Builder;
 
-use miette::{Diagnostic, NamedSource};
+use miette::{Diagnostic, NamedSource, Report};
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use thiserror::Error;
 
 use ivy_eval::{EvalError, Interpreter, Value};
 use ivy_parse::ParseError;
-use ivy_types::TypeError;
+use ivy_syntax::Program;
+use ivy_types::{unreachable_clause_warnings, TypeChecker, TypeError};
 
 const GREEN: &str = "\x1b[32m";
 const BLUE: &str = "\x1b[36m";
@@ -48,6 +49,12 @@ fn print_parse_error(error: ParseError, source: &str, filename: &str) {
 
 fn print_eval_error(error: EvalError, source: &str, filename: &str) {
     eprintln!("{:?}", miette::Report::new(SourcedError::new(error, source, filename)));
+}
+
+fn print_warnings(program: &Program, checker: &TypeChecker, source: &str, filename: &str) {
+    for warning in unreachable_clause_warnings(&program.declarations, &checker.registry) {
+        eprintln!("{:?}", Report::new(SourcedError::new(warning, source, filename)));
+    }
 }
 
 fn print_type_error(error: TypeError, source: &str, filename: &str) {
@@ -94,6 +101,7 @@ fn check_file(path: &str, source: &str, no_prelude: bool) {
 
             match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
                 Ok(()) => {
+                    print_warnings(&program, &type_checker, source, path);
                     println!("{}OK{}: {} type checks successfully", GREEN, RESET, path);
                 }
                 Err(e) => {
@@ -138,13 +146,16 @@ fn run_file(path: &str, show_tree: bool, type_check: bool, no_prelude: bool) {
                 }
 
                 match ivy_types::check_program_with_env(&program, &mut type_checker, &mut type_env, &mut loader) {
-                    Ok(()) => match interp.eval_program_with_loader(&program, &mut loader) {
-                        Ok(_) => {}
-                        Err(e) => {
-                            print_eval_error(e, &source, path);
-                            process::exit(1);
+                    Ok(()) => {
+                        print_warnings(&program, &type_checker, &source, path);
+                        match interp.eval_program_with_loader(&program, &mut loader) {
+                            Ok(_) => {}
+                            Err(e) => {
+                                print_eval_error(e, &source, path);
+                                process::exit(1);
+                            }
                         }
-                    },
+                    }
                     Err(e) => {
                         print_type_error(e, &source, path);
                         process::exit(1);
