@@ -1,14 +1,8 @@
-//! Pattern matching for Ivy.
-//! TODO(gtr): we haven't implemented some exhaustiveness checking yet
-
+use crate::value::{ListValue, Value};
 use ivy_syntax::{Literal, Pattern};
 
-use crate::value::{ListValue, Value};
-
-/// Result of pattern matching: bindings extracted, or None if no match.
 pub type MatchResult = Option<Vec<(String, Value)>>;
 
-/// Match a pattern against a value, extracting bindings.
 pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
     match pattern {
         Pattern::Wildcard => Some(vec![]),
@@ -33,10 +27,7 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                 }
                 let mut bindings = vec![];
                 for (pat, val) in args.iter().zip(fields.iter()) {
-                    match match_pattern(&pat.node, val) {
-                        Some(b) => bindings.extend(b),
-                        None => return None,
-                    }
+                    bindings.extend(match_pattern(&pat.node, val)?);
                 }
                 Some(bindings)
             }
@@ -50,10 +41,7 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                 }
                 let mut bindings = vec![];
                 for (pat, val) in elements.iter().zip(values.iter()) {
-                    match match_pattern(&pat.node, val) {
-                        Some(b) => bindings.extend(b),
-                        None => return None,
-                    }
+                    bindings.extend(match_pattern(&pat.node, val)?);
                 }
                 Some(bindings)
             }
@@ -69,15 +57,9 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                             ListValue::Nil => None,
                             ListValue::Cons(h, t) => {
                                 let mut bindings = vec![];
-                                match match_pattern(&head.node, h) {
-                                    Some(b) => bindings.extend(b),
-                                    None => return None,
-                                }
+                                bindings.extend(match_pattern(&head.node, h)?);
                                 let tail_val = Value::List(t.clone());
-                                match match_pattern(&tail.node, &tail_val) {
-                                    Some(b) => bindings.extend(b),
-                                    None => return None,
-                                }
+                                bindings.extend(match_pattern(&tail.node, &tail_val)?);
                                 Some(bindings)
                             }
                         },
@@ -95,10 +77,7 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                 let ListValue::Cons(h, t) = cur else {
                     return None;
                 };
-                match match_pattern(&pat.node, h) {
-                    Some(b) => bindings.extend(b),
-                    None => return None,
-                }
+                bindings.extend(match_pattern(&pat.node, h)?);
                 cur = t.as_ref();
             }
             match cur {
@@ -112,15 +91,9 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                 ListValue::Nil => None,
                 ListValue::Cons(h, t) => {
                     let mut bindings = vec![];
-                    match match_pattern(&head.node, h) {
-                        Some(b) => bindings.extend(b),
-                        None => return None,
-                    }
+                    bindings.extend(match_pattern(&head.node, h)?);
                     let tail_val = Value::List(t.clone());
-                    match match_pattern(&tail.node, &tail_val) {
-                        Some(b) => bindings.extend(b),
-                        None => return None,
-                    }
+                    bindings.extend(match_pattern(&tail.node, &tail_val)?);
                     Some(bindings)
                 }
             },
@@ -139,10 +112,7 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
                 for field_pat in fields {
                     let field_val = val_fields.get(&field_pat.name.name)?;
                     match &field_pat.pattern {
-                        Some(pat) => match match_pattern(&pat.node, field_val) {
-                            Some(b) => bindings.extend(b),
-                            None => return None,
-                        },
+                        Some(pat) => bindings.extend(match_pattern(&pat.node, field_val)?),
                         None => {
                             bindings.push((field_pat.name.name.clone(), field_val.clone()));
                         }
@@ -157,7 +127,6 @@ pub fn match_pattern(pattern: &Pattern, value: &Value) -> MatchResult {
     }
 }
 
-/// Check if a literal matches a value.
 fn literal_matches(lit: &Literal, value: &Value) -> bool {
     match (lit, value) {
         (Literal::Int(a), Value::Int(b)) => a == b,

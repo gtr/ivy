@@ -8,7 +8,7 @@
 //! Reference: <https://smunix.github.io/dev.stephendiehl.com/fun/006_hindley_milner.html>
 use crate::env::{TypeEnv, TypeVarGen, BUILTIN_VAR_OFFSET};
 use crate::error::{TypeError, TypeResult};
-use crate::exhaustiveness;
+use crate::patterns::exhaustiveness;
 use crate::registry::{ImplInfo, TraitInfo, TypeRegistry};
 use crate::subst::Subst;
 use crate::suggest::did_you_mean;
