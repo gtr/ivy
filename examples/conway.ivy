@@ -54,12 +54,12 @@ fn renderRow([x | xs]): String => cellChar(x) ++ renderRow(xs);
 
 fn render([]): String => "";
 fn render([row]): String => renderRow(row);
-fn render([row | rows]): String => renderRow(row) ++ "\n" ++ render(rows);
+fn render([row | rows]): String => "{renderRow(row)}\n{render(rows)}";
 
 fn run(grid: [[Int]], gen: Int, total: Int): () =>
   if gen > total then ()
   else do {
-    println("gen " ++ show(gen) ++ ":");
+    println("gen {gen}:");
     println(render(grid));
     println("");
     run(step(grid), gen + 1, total)

@@ -20,6 +20,5 @@ ivy-parse.workspace = true
 ivy-types.workspace = true
 ivy-eval.workspace = true
 rustyline.workspace = true
-colored.workspace = true
 miette.workspace = true
 thiserror.workspace = true

@@ -10,7 +10,7 @@ pub mod types;
 pub use ast::{Ident, Program};
 pub use decl::{
     collect_public_names, Decl, FnBody, FnDecl, GuardedExpr, RecordField, TypeBody, Variant, EQ_METHOD, EQ_TRAIT,
-    ORD_METHOD, ORD_TRAIT, SHOW_METHOD, SHOW_TRAIT, STRUCTURAL_TUPLE_TRAITS,
+    ORD_METHOD, ORD_TRAIT, SHOW_ALIAS, SHOW_METHOD, SHOW_TRAIT, STRUCTURAL_TUPLE_TRAITS,
 };
 pub use expr::{Expr, FieldInit, MatchArm, Param};
 pub use lit::Literal;

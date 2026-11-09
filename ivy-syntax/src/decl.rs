@@ -8,6 +8,7 @@ use crate::types::TypeExpr;
 
 pub const SHOW_TRAIT: &str = "Show";
 pub const SHOW_METHOD: &str = "show";
+pub const SHOW_ALIAS: &str = "__show";
 pub const EQ_TRAIT: &str = "Eq";
 pub const EQ_METHOD: &str = "eq";
 pub const ORD_TRAIT: &str = "Ord";

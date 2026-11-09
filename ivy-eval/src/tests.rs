@@ -281,6 +281,26 @@ mod interpreter_tests {
     }
 
     #[test]
+    fn test_string_interpolation() {
+        let code = r#"let name = "ivy"; "hi {name}, {1 + 2} and \{x}";"#;
+        if let Ok(Value::String(s)) = eval(code) {
+            assert_eq!(s, "hi ivy, 3 and {x}");
+        } else {
+            panic!("Expected string");
+        }
+    }
+
+    #[test]
+    fn test_string_interpolation_ignores_local_show() {
+        let example = r#"fn display(show: Bool): String => "flag={show}"; display(true);"#;
+        if let Ok(Value::String(s)) = eval(example) {
+            assert_eq!(s, "flag=true");
+        } else {
+            panic!("Expected string");
+        }
+    }
+
+    #[test]
     fn test_let_binding() {
         assert!(matches!(eval("let x = 42; x;"), Ok(Value::Int(42))));
     }

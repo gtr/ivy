@@ -45,6 +45,12 @@ pub enum TokenKind {
     Float,
     /// String literal
     String,
+    /// Interpolated string up to its first hole: `"text{`
+    StringStart,
+    /// Text between two holes: `}text{`
+    StringMid,
+    /// Text after the last hole: `}text"`
+    StringEnd,
     /// Character literal
     Char,
 
@@ -224,6 +230,8 @@ impl fmt::Display for TokenKind {
             TokenKind::Int => "integer",
             TokenKind::Float => "float",
             TokenKind::String => "string",
+            TokenKind::StringStart => "string",
+            TokenKind::StringMid | TokenKind::StringEnd => "'}'",
             TokenKind::Char => "char",
             TokenKind::Ident => "identifier",
             TokenKind::TypeIdent => "type name",

@@ -17,7 +17,7 @@ use ivy_parse::ModuleLoader;
 use ivy_syntax::decl::{Constraint, Decl, FnBody, FnDecl, ImportKind, TraitItem, TypeBody};
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::types::TypeExpr;
-use ivy_syntax::{collect_public_names, Ident, Program, Span, Spanned};
+use ivy_syntax::{collect_public_names, Ident, Program, Span, Spanned, SHOW_ALIAS, SHOW_METHOD};
 pub use patterns::unreachable_clause_warnings;
 pub use registry::{ImplInfo, TraitInfo, TypeRegistry, VariantInfo};
 use std::collections::{HashMap, HashSet};
@@ -240,6 +240,9 @@ fn check_trait_decl(
     }
 
     for (m_name, scheme) in &method_schemes {
+        if m_name == SHOW_METHOD {
+            env.insert(SHOW_ALIAS.to_string(), scheme.clone());
+        }
         env.insert(m_name.clone(), scheme.clone());
     }
 

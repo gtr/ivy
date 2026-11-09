@@ -1,5 +1,3 @@
-//! Lexer for Ivy
-
 use std::mem;
 
 use crate::error::{LexError, LexResult};
@@ -20,6 +18,13 @@ struct Lexer<'a> {
     offset: usize,
     /// Collected tokens.
     tokens: Vec<Token>,
+    /// One entry per open interpolation hole.
+    holes: Vec<Hole>,
+}
+
+struct Hole {
+    depth: usize,
+    quote: usize,
 }
 
 impl<'a> Lexer<'a> {
@@ -29,6 +34,7 @@ impl<'a> Lexer<'a> {
             input,
             offset: 0,
             tokens: Vec::new(),
+            holes: Vec::new(),
         }
     }
 
@@ -41,6 +47,12 @@ impl<'a> Lexer<'a> {
             }
             let token = self.next_token()?;
             self.tokens.push(token);
+        }
+
+        if let Some(hole) = self.holes.last() {
+            return Err(LexError::UnterminatedString {
+                start: Span::new(hole.quote, hole.quote + 1),
+            });
         }
 
         self.tokens.push(Token::eof(self.offset));
@@ -250,10 +262,21 @@ impl<'a> Lexer<'a> {
             }
             '{' => {
                 self.advance();
+                if let Some(hole) = self.holes.last_mut() {
+                    hole.depth += 1;
+                }
                 TokenKind::LBrace
             }
             '}' => {
                 self.advance();
+                match self.holes.last_mut() {
+                    Some(hole) if hole.depth == 0 => {
+                        let quote = self.holes.pop().unwrap().quote;
+                        return self.lex_string_part(start, quote, false);
+                    }
+                    Some(hole) => hole.depth -= 1,
+                    None => {}
+                }
                 TokenKind::RBrace
             }
             '[' => {
@@ -304,20 +327,33 @@ impl<'a> Lexer<'a> {
     fn lex_string(&mut self) -> LexResult<Token> {
         let start = self.offset;
         self.advance();
+        self.lex_string_part(start, start, true)
+    }
 
+    /// Lex string text up to the closing `"` or the next `{` hole
+    fn lex_string_part(&mut self, start: usize, quote: usize, first: bool) -> LexResult<Token> {
         let mut value = String::new();
 
         while let Some(ch) = self.peek() {
-            if ch == '"' {
+            if ch == '"' || ch == '{' {
                 self.advance();
-                let mut token = self.make_token(TokenKind::String, start);
+                let kind = match (ch == '"', first) {
+                    (true, true) => TokenKind::String,
+                    (true, false) => TokenKind::StringEnd,
+                    (false, true) => TokenKind::StringStart,
+                    (false, false) => TokenKind::StringMid,
+                };
+                if ch == '{' {
+                    self.holes.push(Hole { depth: 0, quote });
+                }
+                let mut token = self.make_token(kind, start);
                 token.lexeme = value;
                 return Ok(token);
             }
 
             if ch == '\n' {
                 return Err(LexError::UnterminatedString {
-                    start: Span::new(start, start + 1),
+                    start: Span::new(quote, quote + 1),
                 });
             }
 
@@ -332,7 +368,7 @@ impl<'a> Lexer<'a> {
         }
 
         Err(LexError::UnterminatedString {
-            start: Span::new(start, start + 1),
+            start: Span::new(quote, quote + 1),
         })
     }
 
@@ -346,6 +382,8 @@ impl<'a> Lexer<'a> {
             Some('\\') => Ok('\\'),
             Some('"') => Ok('"'),
             Some('\'') => Ok('\''),
+            Some('{') => Ok('{'),
+            Some('}') => Ok('}'),
             Some('0') => Ok('\0'),
             Some(ch) => Err(LexError::InvalidEscape {
                 ch,
@@ -495,6 +533,27 @@ mod tests {
         let tokens = lex(r#""hello\nworld""#).unwrap();
         assert_eq!(tokens[0].kind, TokenKind::String);
         assert_eq!(tokens[0].lexeme, "hello\nworld");
+    }
+
+    #[test]
+    fn test_interpolated_string() {
+        let tokens = lex(r#""a{x}b{ {} }c\{""#).unwrap();
+        let kinds: Vec<_> = tokens.iter().map(|t| t.kind).collect();
+        assert_eq!(
+            kinds,
+            vec![
+                TokenKind::StringStart,
+                TokenKind::Ident,
+                TokenKind::StringMid,
+                TokenKind::LBrace,
+                TokenKind::RBrace,
+                TokenKind::StringEnd,
+                TokenKind::Eof,
+            ]
+        );
+        assert_eq!(tokens[0].lexeme, "a");
+        assert_eq!(tokens[2].lexeme, "b");
+        assert_eq!(tokens[5].lexeme, "c{");
     }
 
     #[test]

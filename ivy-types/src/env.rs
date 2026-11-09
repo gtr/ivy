@@ -1,5 +1,6 @@
 use crate::subst::Subst;
 use crate::types::{Scheme, Type, TypeVar};
+use ivy_syntax::{SHOW_ALIAS, SHOW_METHOD};
 use std::collections::{HashMap, HashSet};
 
 pub const BUILTIN_VAR_OFFSET: u32 = 1_000_000;
@@ -45,10 +46,9 @@ impl TypeEnv {
         );
 
         // show: a -> String
-        env.insert(
-            "show".to_string(),
-            Scheme::poly(vec![a], Type::fun(Type::Var(a), Type::String)),
-        );
+        let show = Scheme::poly(vec![a], Type::fun(Type::Var(a), Type::String));
+        env.insert(SHOW_ALIAS.to_string(), show.clone());
+        env.insert(SHOW_METHOD.to_string(), show);
 
         // ========================================================================
         // Type constructors

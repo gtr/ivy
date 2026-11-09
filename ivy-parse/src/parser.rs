@@ -9,6 +9,7 @@ use ivy_syntax::op::{BinOp, UnaryOp};
 use ivy_syntax::pattern::{FieldPattern, Pattern};
 use ivy_syntax::span::{Span, Spanned};
 use ivy_syntax::types::TypeExpr;
+use ivy_syntax::SHOW_ALIAS;
 
 pub fn parse(source: &str) -> ParseResult<Program> {
     let tokens = lexer::lex(source).map_err(|e| match e {
@@ -1274,6 +1275,7 @@ impl<'a> Parser<'a> {
                 let span = token.span;
                 Ok(Spanned::new(Expr::Lit(Literal::String(token.lexeme.clone())), span))
             }
+            TokenKind::StringStart => self.parse_interpolated_string(),
             TokenKind::Char => {
                 let token = self.advance();
                 let ch = token.lexeme.chars().next().unwrap();
@@ -1415,6 +1417,55 @@ impl<'a> Parser<'a> {
 
             _ => Err(ParseError::unexpected("expression", self.current())),
         }
+    }
+
+    /// Parse `"a {x} b"`, desugared to `"a " ++ __show(x) ++ " b"`.
+    fn parse_interpolated_string(&mut self) -> ParseResult<Spanned<Expr>> {
+        let start = self.current().span.start;
+        let mut parts = Vec::new();
+
+        loop {
+            let token = self.advance();
+            let kind = token.kind;
+            if !token.lexeme.is_empty() {
+                parts.push(Spanned::new(
+                    Expr::Lit(Literal::String(token.lexeme.clone())),
+                    token.span,
+                ));
+            }
+            if kind == TokenKind::StringEnd {
+                break;
+            }
+
+            let hole = self.parse_expr()?;
+            let span = hole.span;
+            parts.push(Spanned::new(
+                Expr::Call {
+                    callee: Box::new(Spanned::new(Expr::Var(Ident::new(SHOW_ALIAS, span)), span)),
+                    args: vec![hole],
+                },
+                span,
+            ));
+
+            if !self.check(TokenKind::StringMid) && !self.check(TokenKind::StringEnd) {
+                return Err(ParseError::unexpected("'}'", self.current()));
+            }
+        }
+
+        let span = self.span_from(start);
+        let mut parts = parts.into_iter().rev();
+        let last = parts.next().expect("an interpolated string has at least one hole");
+        let expr = parts.fold(last, |right, left| {
+            Spanned::new(
+                Expr::Binary {
+                    left: Box::new(left),
+                    op: Spanned::new(BinOp::Concat, span),
+                    right: Box::new(right),
+                },
+                span,
+            )
+        });
+        Ok(Spanned::new(expr.node, span))
     }
 
     fn parse_pattern(&mut self) -> ParseResult<Spanned<Pattern>> {

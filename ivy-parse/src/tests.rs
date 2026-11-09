@@ -403,4 +403,13 @@ mod parser_tests {
         assert!(parse(r#""tab\there";"#).is_ok());
         assert!(parse(r#""quote: \"";"#).is_ok());
     }
+
+    #[test]
+    fn test_parse_interpolation() {
+        assert!(parse(r#""a {x} b {f(y)}";"#).is_ok());
+        assert!(parse(r#""{"inner {x}"}";"#).is_ok());
+        assert!(parse(r#""{}";"#).is_err());
+        assert!(parse(r#""{x y}";"#).is_err());
+        assert!(parse(r#""{x";"#).is_err());
+    }
 }

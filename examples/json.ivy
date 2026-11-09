@@ -105,22 +105,22 @@ fn parse(s: String): Option<Json> =>
 fn showJson(JNull): String => "null";
 fn showJson(JBool(b)): String => show(b);
 fn showJson(JNum(n)): String => show(n);
-fn showJson(JStr(s)): String => "\"" ++ s ++ "\"";
-fn showJson(JArr(xs)): String => "[" ++ showJsonList(xs) ++ "]";
-fn showJson(JObj(kvs)): String => "{" ++ showJsonObj(kvs) ++ "}";
+fn showJson(JStr(s)): String => "\"{s}\"";
+fn showJson(JArr(xs)): String => "[{showJsonList(xs)}]";
+fn showJson(JObj(kvs)): String => "\{{showJsonObj(kvs)}}";
 
 fn showJsonList([]): String => "";
 fn showJsonList([x]): String => showJson(x);
-fn showJsonList([x | xs]): String => showJson(x) ++ "," ++ showJsonList(xs);
+fn showJsonList([x | xs]): String => "{showJson(x)},{showJsonList(xs)}";
 
 fn showJsonObj([]): String => "";
-fn showJsonObj([(k, v)]): String => "\"" ++ k ++ "\":" ++ showJson(v);
-fn showJsonObj([(k, v) | rest]): String => "\"" ++ k ++ "\":" ++ showJson(v) ++ "," ++ showJsonObj(rest);
+fn showJsonObj([(k, v)]): String => "\"{k}\":{showJson(v)}";
+fn showJsonObj([(k, v) | rest]): String => "\"{k}\":{showJson(v)},{showJsonObj(rest)}";
 
 fn showResult(None): String => "parse error";
 fn showResult(Some(j)): String => showJson(j);
 
 println(showResult(parse("null")));
 println(showResult(parse("[1, 2, 3]")));
-println(showResult(parse("{\"name\": \"ivy\", \"nums\": [10, -5], \"ok\": true}")));
+println(showResult(parse("\{\"name\": \"ivy\", \"nums\": [10, -5], \"ok\": true}")));
 println(showResult(parse("[[1], [2, 3], []]")));

@@ -12,8 +12,8 @@ use ivy_parse::ModuleLoader;
 use ivy_syntax::decl::{FnDecl, ImportKind, TraitItem};
 use ivy_syntax::types::TypeExpr;
 use ivy_syntax::{
-    Decl, Expr, FnBody, Program, Span, Spanned, TypeBody, EQ_METHOD, EQ_TRAIT, ORD_METHOD, ORD_TRAIT, SHOW_METHOD,
-    SHOW_TRAIT,
+    Decl, Expr, FnBody, Program, Span, Spanned, TypeBody, EQ_METHOD, EQ_TRAIT, ORD_METHOD, ORD_TRAIT, SHOW_ALIAS,
+    SHOW_METHOD, SHOW_TRAIT,
 };
 
 const ORDERING_EQUAL: &str = "Equal";
@@ -280,7 +280,9 @@ impl Interpreter {
         self.env.define("print", Value::Builtin(BUILTIN_PRINT.clone()), false);
         self.env
             .define("println", Value::Builtin(BUILTIN_PRINTLN.clone()), false);
-        self.env.define("show", Value::Builtin(BUILTIN_SHOW.clone()), false);
+        self.env
+            .define(SHOW_METHOD, Value::Builtin(BUILTIN_SHOW.clone()), false);
+        self.env.define(SHOW_ALIAS, Value::Builtin(BUILTIN_SHOW.clone()), false);
 
         // I/O intrinsics
         self.env.define("__print", Value::Builtin(BUILTIN_PRINT.clone()), false);
@@ -663,14 +665,14 @@ impl Interpreter {
                 TraitItem::Signature { name, .. } => name.name.clone(),
                 TraitItem::DefaultImpl(fn_decl) => fn_decl.name.name.clone(),
             };
-            self.env.define(
-                &method_name,
-                Value::TraitMethod {
-                    trait_name: trait_name.to_string(),
-                    method: method_name.clone(),
-                },
-                false,
-            );
+            let value = Value::TraitMethod {
+                trait_name: trait_name.to_string(),
+                method: method_name.clone(),
+            };
+            if method_name == SHOW_METHOD {
+                self.env.define(SHOW_ALIAS, value.clone(), false);
+            }
+            self.env.define(&method_name, value, false);
             if let TraitItem::DefaultImpl(fn_decl) = item {
                 defaults.insert(
                     method_name,
