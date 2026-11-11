@@ -186,6 +186,7 @@ impl TokenKind {
                 | TokenKind::Where
                 | TokenKind::Do
                 | TokenKind::For
+                | TokenKind::In
                 | TokenKind::And
                 | TokenKind::Or
         )

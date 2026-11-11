@@ -9,11 +9,15 @@ use ivy_syntax::op::{BinOp, UnaryOp};
 use ivy_syntax::pattern::{FieldPattern, Pattern};
 use ivy_syntax::span::{Span, Spanned};
 use ivy_syntax::types::TypeExpr;
-use ivy_syntax::SHOW_ALIAS;
+use ivy_syntax::{hints, SHOW_ALIAS};
 
 pub fn parse(source: &str) -> ParseResult<Program> {
     let tokens = lexer::lex(source).map_err(|e| match e {
-        LexError::UnexpectedChar { ch, span } => ParseError::UnexpectedChar { ch, span },
+        LexError::UnexpectedChar { ch, span } => ParseError::UnexpectedChar {
+            ch,
+            span,
+            help: hints::unexpected_char(ch).map(String::from),
+        },
         LexError::UnterminatedString { start } => ParseError::Unterminated { kind: "string", start },
         LexError::UnterminatedChar { start } => ParseError::Unterminated {
             kind: "character",
@@ -71,7 +75,35 @@ impl<'a> Parser<'a> {
         if self.check(kind) {
             Ok(self.advance())
         } else {
-            Err(ParseError::unexpected(kind.to_string(), self.current()))
+            Err(self.unexpected(kind.to_string()))
+        }
+    }
+
+    fn unexpected(&self, expected: impl Into<String>) -> ParseError {
+        let expected = expected.into();
+        ParseError::UnexpectedToken {
+            help: self.hint(&expected),
+            expected,
+            found: self.current().kind,
+            span: self.current().span,
+        }
+    }
+
+    fn hint(&self, expected: &str) -> Option<String> {
+        let current = self.current();
+        let next = self.tokens.get(self.pos + 1);
+        let previous = self.pos.checked_sub(1).and_then(|index| self.tokens.get(index));
+        let doubled = next.is_some_and(|next| next.kind == current.kind && next.span.start == current.span.end);
+        match current.kind {
+            TokenKind::Pipe if doubled => Some(hints::OR_OPERATOR.to_string()),
+            TokenKind::StringStart if expected == "pattern" => Some(hints::INTERPOLATED_PATTERN.to_string()),
+            kind if kind.is_keyword() && matches!(expected, "identifier" | "pattern" | "expression") => {
+                Some(hints::keyword_as_name(&current.lexeme))
+            }
+            _ if previous.is_some_and(|token| token.kind == TokenKind::Ident && token.lexeme == "return") => {
+                Some(hints::NO_RETURN.to_string())
+            }
+            _ => None,
         }
     }
 
@@ -123,7 +155,7 @@ impl<'a> Parser<'a> {
             TokenKind::Fn => self.parse_fn_decl(is_pub)?,
             TokenKind::Let => self.parse_let_decl(is_pub)?,
             _ if is_pub => {
-                return Err(ParseError::unexpected("declaration after 'pub'", self.current()));
+                return Err(self.unexpected("declaration after 'pub'"));
             }
             // Top-level expression (e.g., function call like println(...))
             _ => {
@@ -429,7 +461,7 @@ impl<'a> Parser<'a> {
                     span,
                 )))
             } else {
-                Err(ParseError::unexpected("';' or '=>'", self.current()))
+                Err(self.unexpected("';' or '=>'"))
             }
         } else if self.match_token(TokenKind::Colon).is_some() {
             // fn name: Type; (type signature without params)
@@ -438,7 +470,7 @@ impl<'a> Parser<'a> {
             let span = self.span_from(start);
             Ok(TraitItem::Signature { name, ty, span })
         } else {
-            Err(ParseError::unexpected("'(' or ':'", self.current()))
+            Err(self.unexpected("'(' or ':'"))
         }
     }
 
@@ -593,7 +625,7 @@ impl<'a> Parser<'a> {
             }
             FnBody::Guards(guards)
         } else {
-            return Err(ParseError::unexpected("'=>' or '|'", self.current()));
+            return Err(self.unexpected("'=>' or '|'"));
         };
 
         Ok((params, return_ty, body))
@@ -759,7 +791,7 @@ impl<'a> Parser<'a> {
                 Ok(Spanned::new(TypeExpr::Var(name), span))
             }
 
-            _ => Err(ParseError::unexpected("type", self.current())),
+            _ => Err(self.unexpected("type")),
         }
     }
 
@@ -1415,7 +1447,7 @@ impl<'a> Parser<'a> {
                 ))
             }
 
-            _ => Err(ParseError::unexpected("expression", self.current())),
+            _ => Err(self.unexpected("expression")),
         }
     }
 
@@ -1448,7 +1480,7 @@ impl<'a> Parser<'a> {
             ));
 
             if !self.check(TokenKind::StringMid) && !self.check(TokenKind::StringEnd) {
-                return Err(ParseError::unexpected("'}'", self.current()));
+                return Err(self.unexpected("'}'"));
             }
         }
 
@@ -1641,13 +1673,21 @@ impl<'a> Parser<'a> {
                 while self.match_token(TokenKind::Comma).is_some() {
                     elements.push(self.parse_pattern_primary()?);
                 }
+                if self.check(TokenKind::Pipe) {
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "']'".to_string(),
+                        found: TokenKind::Pipe,
+                        span: self.current().span,
+                        help: Some(hints::LIST_HEADS.to_string()),
+                    });
+                }
 
                 self.expect(TokenKind::RBracket)?;
                 let span = self.span_from(start);
                 Ok(Spanned::new(Pattern::List { elements }, span))
             }
 
-            _ => Err(ParseError::unexpected("pattern", self.current())),
+            _ => Err(self.unexpected("pattern")),
         }
     }
 
@@ -1657,7 +1697,7 @@ impl<'a> Parser<'a> {
             let token = self.advance();
             Ok(Ident::new(&token.lexeme, token.span))
         } else {
-            Err(ParseError::unexpected("identifier", self.current()))
+            Err(self.unexpected("identifier"))
         }
     }
 
@@ -1667,7 +1707,7 @@ impl<'a> Parser<'a> {
             let token = self.advance();
             Ok(Ident::new(&token.lexeme, token.span))
         } else {
-            Err(ParseError::unexpected("type name", self.current()))
+            Err(self.unexpected("type name"))
         }
     }
 
@@ -1677,7 +1717,7 @@ impl<'a> Parser<'a> {
             let token = self.advance();
             Ok(Ident::new(&token.lexeme, token.span))
         } else {
-            Err(ParseError::unexpected("identifier", self.current()))
+            Err(self.unexpected("identifier"))
         }
     }
 }

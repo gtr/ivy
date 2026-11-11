@@ -1,5 +1,5 @@
 use crate::types::{TraitConstraint, Type, TypeVar};
-use ivy_syntax::Span;
+use ivy_syntax::{hints, Span};
 use miette::Diagnostic;
 use thiserror::Error;
 
@@ -113,11 +113,32 @@ pub enum TypeError {
     #[error("cannot infer the record type for field `.{field}`")]
     #[diagnostic(
         code(ivy::types::ambiguous_field),
-        help("annotate the value so its record type is known. example: `fn (r: SomeRecord) => r.{field}`")
+        help(
+            "say which record this is: annotate the parameter, as in `(p: Point)`, \
+             or give the function a signature, as in `fn name :: Point -> Float;`"
+        )
     )]
     AmbiguousField {
         field: String,
         #[label("the type of the value accessed here is unknown")]
+        span: Span,
+    },
+
+    #[error("module {module} has no public `{member}`")]
+    #[diagnostic(code(ivy::types::undefined_module_member))]
+    UndefinedModuleMember {
+        module: String,
+        member: String,
+        #[label("not exported by {module}")]
+        span: Span,
+        #[help]
+        help: String,
+    },
+
+    #[error("assignment in condition")]
+    #[diagnostic(code(ivy::types::assign_in_condition), help("to compare two values, use `==`"))]
+    AssignInCondition {
+        #[label("`=` here")]
         span: Span,
     },
 
@@ -348,6 +369,8 @@ impl TypeError {
             | TypeError::NotARecord { span, .. }
             | TypeError::UndefinedField { span, .. }
             | TypeError::AmbiguousField { span, .. }
+            | TypeError::AssignInCondition { span }
+            | TypeError::UndefinedModuleMember { span, .. }
             | TypeError::NotIndexable { span, .. }
             | TypeError::PatternMismatch { span, .. }
             | TypeError::OrPatternBindingMismatch { span, .. }
@@ -472,9 +495,10 @@ impl TypeError {
     }
 
     pub fn undefined_variable(name: &str, span: Span, suggestion: Option<String>) -> TypeError {
-        let help = Some(match suggestion {
-            Some(s) => format!("did you mean `{}`?", s),
-            None => format!("is `{}` defined in scope? check imports and spelling", name),
+        let help = Some(match (hints::foreign_name(name), suggestion) {
+            (Some(help), _) => help.to_string(),
+            (None, Some(s)) => format!("did you mean `{}`?", s),
+            (None, None) => format!("is `{}` defined in scope? check imports and spelling", name),
         });
         TypeError::UndefinedVariable {
             name: name.to_string(),

@@ -14,6 +14,7 @@ use crate::subst::Subst;
 use crate::suggest::did_you_mean;
 use crate::types::{Scheme, TraitConstraint, Type, TypeVar};
 use crate::unify::unify_with_subst;
+use ivy_syntax::hints;
 use ivy_syntax::{
     expr::{Expr, MatchArm, Param},
     lit::Literal,
@@ -111,6 +112,14 @@ impl TypeChecker {
             where_constraints: vec![],
             span: Span::default(),
         });
+    }
+
+    pub(crate) fn check_condition(&mut self, condition: &Spanned<Expr>, env: &TypeEnv) -> TypeResult<()> {
+        if let Expr::Assign { .. } = condition.node {
+            return Err(TypeError::AssignInCondition { span: condition.span });
+        }
+        let cond_ty = self.infer(condition, env)?;
+        unify_with_subst(&Type::Bool, &cond_ty, &mut self.subst, condition.span)
     }
 
     /// Infer the type of an expression.
@@ -391,8 +400,7 @@ impl TypeChecker {
         env: &TypeEnv,
         _span: Span,
     ) -> TypeResult<Type> {
-        let cond_ty = self.infer(condition, env)?;
-        unify_with_subst(&Type::Bool, &cond_ty, &mut self.subst, condition.span)?;
+        self.check_condition(condition, env)?;
 
         let then_ty = self.infer(then_branch, env)?;
         let else_ty = self.infer(else_branch, env)?;
@@ -527,7 +535,14 @@ impl TypeChecker {
                 return Ok(self.instantiate(&scheme, span));
             }
             if env.is_module(module_name) {
-                return Err(TypeError::undefined_field(module_name, field, span));
+                let suggestion = did_you_mean(field, env.module_export_names(module_name));
+                let help = hints::module_member(module_name, field, suggestion.as_deref());
+                return Err(TypeError::UndefinedModuleMember {
+                    module: module_name.clone(),
+                    member: field.to_string(),
+                    span,
+                    help,
+                });
             }
         }
 
@@ -1500,5 +1515,41 @@ mod tests {
     fn test_unresolvable_field_access_is_error() {
         let code = "fn get(r) => r.value;";
         assert!(check_program(code).is_err());
+    }
+
+    fn help(code: &str) -> Option<String> {
+        use miette::Diagnostic;
+        let program = ivy_parse::parse(code).expect("parse failed");
+        let mut loader = ivy_parse::ModuleLoader::new(vec!["../lib".into()]);
+        let error = crate::check_program_with_env(
+            &program,
+            &mut TypeChecker::new(),
+            &mut TypeEnv::with_builtins(),
+            &mut loader,
+        )
+        .expect_err("expected a type error");
+        error.help().map(|help| help.to_string())
+    }
+
+    #[test]
+    fn test_hints_for_common_mistakes() {
+        let cases = [
+            (
+                "fn f(n: Int): Bool => if n = 0 then true else false;",
+                "to compare two values, use `==`".to_string(),
+            ),
+            (
+                "fn f(xs: [Int]): Int => len(xs);",
+                hints::foreign_name("len").unwrap().to_string(),
+            ),
+            (
+                "import List;\nfn f(xs: [Int]) => List.revrse(xs);",
+                hints::module_member("List", "revrse", Some("reverse")),
+            ),
+            ("fn f(n: Int) => range(0, n);", hints::import_module("range", "List")),
+        ];
+        for (code, expected) in cases {
+            assert_eq!(help(code), Some(expected), "{code}");
+        }
     }
 }

@@ -1,6 +1,6 @@
 //! Error types for parsing.
 
-use crate::token::{Token, TokenKind};
+use crate::token::TokenKind;
 use ivy_syntax::Span;
 use miette::Diagnostic;
 use thiserror::Error;
@@ -18,6 +18,8 @@ pub enum ParseError {
         found: TokenKind,
         #[label("found {} here", found)]
         span: Span,
+        #[help]
+        help: Option<String>,
     },
 
     #[error("Unexpected end of file")]
@@ -64,6 +66,8 @@ pub enum ParseError {
         ch: char,
         #[label("unexpected character")]
         span: Span,
+        #[help]
+        help: Option<String>,
     },
 
     #[error("Invalid pattern in binding")]
@@ -78,15 +82,6 @@ pub enum ParseError {
 }
 
 impl ParseError {
-    /// Create an unexpected token error.
-    pub fn unexpected(expected: impl Into<String>, token: &Token) -> Self {
-        ParseError::UnexpectedToken {
-            expected: expected.into(),
-            found: token.kind,
-            span: token.span,
-        }
-    }
-
     /// Create an unexpected EOF error.
     pub fn eof(expected: impl Into<String>, span: Span) -> Self {
         ParseError::UnexpectedEof {

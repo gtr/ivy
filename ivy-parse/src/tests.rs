@@ -412,4 +412,28 @@ mod parser_tests {
         assert!(parse(r#""{x y}";"#).is_err());
         assert!(parse(r#""{x";"#).is_err());
     }
+
+    fn help(code: &str) -> Option<String> {
+        use miette::Diagnostic;
+        parse(code).err()?.help().map(|help| help.to_string())
+    }
+
+    #[test]
+    fn test_hints_for_common_mistakes() {
+        use ivy_syntax::hints;
+        let cases = [
+            ("fn f(a: Bool, b: Bool) => a || b;", hints::OR_OPERATOR.to_string()),
+            (
+                "fn f(a: Bool, b: Bool) => a && b;",
+                hints::unexpected_char('&').unwrap().to_string(),
+            ),
+            ("fn f(Pair(from, to)) => to;", hints::keyword_as_name("from")),
+            ("fn f([a, b | rest]) => a;", hints::LIST_HEADS.to_string()),
+            (r#"fn f("hi {name}") => 1;"#, hints::INTERPOLATED_PATTERN.to_string()),
+            ("fn f(x) => return x;", hints::NO_RETURN.to_string()),
+        ];
+        for (code, expected) in cases {
+            assert_eq!(help(code), Some(expected), "{code}");
+        }
+    }
 }

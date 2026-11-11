@@ -15,6 +15,7 @@ pub use error::{TypeError, TypeErrorKind, TypeResult, TypeWarning};
 pub use infer::TypeChecker;
 use ivy_parse::ModuleLoader;
 use ivy_syntax::decl::{Constraint, Decl, FnBody, FnDecl, ImportKind, TraitItem, TypeBody};
+use ivy_syntax::hints;
 use ivy_syntax::pattern::Pattern;
 use ivy_syntax::types::TypeExpr;
 use ivy_syntax::{collect_public_names, Ident, Program, Span, Spanned, SHOW_ALIAS, SHOW_METHOD};
@@ -79,7 +80,18 @@ pub fn check_program_with_env(
     env: &mut TypeEnv,
     loader: &mut ModuleLoader,
 ) -> TypeResult<()> {
-    check_declarations(checker, &program.declarations, env, loader)
+    check_declarations(checker, &program.declarations, env, loader).map_err(|error| with_import_hint(error, loader))
+}
+
+fn with_import_hint(error: TypeError, loader: &mut ModuleLoader) -> TypeError {
+    let TypeError::UndefinedVariable { name, span, help } = error else {
+        return error;
+    };
+    let help = loader
+        .module_exporting(&name)
+        .map(|module| hints::import_module(&name, &module))
+        .or(help);
+    TypeError::UndefinedVariable { name, span, help }
 }
 
 /// If the error is a Mismatch without an `expected_span`, attach one.
@@ -426,8 +438,7 @@ fn check_impl_method(checker: &mut TypeChecker, env: &TypeEnv, fn_decl: &FnDecl)
         FnBody::Guards(guards) => {
             let mut result_ty = None;
             for guard in guards {
-                let cond_ty = checker.infer(&guard.guard, &body_env)?;
-                unify::unify_with_subst(&cond_ty, &Type::Bool, &mut checker.subst, guard.guard.span)?;
+                checker.check_condition(&guard.guard, &body_env)?;
                 let g_body_ty = checker.infer(&guard.body, &body_env)?;
                 match &result_ty {
                     Some(t) => {
@@ -737,8 +748,7 @@ fn check_fn_decl(checker: &mut TypeChecker, fn_decl: &FnDecl, env: &mut TypeEnv)
         FnBody::Guards(guards) => {
             let mut result_ty = None;
             for guard in guards {
-                let cond_ty = checker.infer(&guard.guard, &body_env)?;
-                unify::unify_with_subst(&cond_ty, &Type::Bool, &mut checker.subst, guard.guard.span)?;
+                checker.check_condition(&guard.guard, &body_env)?;
 
                 let body_ty = checker.infer(&guard.body, &body_env)?;
                 match &result_ty {

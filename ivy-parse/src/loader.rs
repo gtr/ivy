@@ -6,7 +6,7 @@ use std::fmt;
 use std::fs;
 use std::path::PathBuf;
 
-use ivy_syntax::{collect_public_names, Program};
+use ivy_syntax::{collect_public_names, Decl, Program};
 
 use ivy_utils::resolve_module_path;
 
@@ -122,6 +122,32 @@ impl ModuleLoader {
 
         self.loaded.insert(module_name.clone(), module);
         Ok(self.loaded.get(&module_name).unwrap())
+    }
+
+    /// The module on the search path that exports `name`, if exactly one does
+    pub fn module_exporting(&mut self, name: &str) -> Option<String> {
+        let stems: Vec<String> = self
+            .search_paths
+            .iter()
+            .filter_map(|dir| fs::read_dir(dir).ok())
+            .flatten()
+            .flatten()
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "ivy"))
+            .filter_map(|path| Some(path.file_stem()?.to_str()?.to_string()))
+            .collect();
+        let mut modules = stems.into_iter().filter_map(|stem| {
+            let module = self.load(&[stem]).ok()?;
+            if !module.public_names.contains(name) {
+                return None;
+            }
+            module.program.declarations.iter().find_map(|decl| match &decl.node {
+                Decl::Module { name } => Some(name.name.clone()),
+                _ => None,
+            })
+        });
+        let module = modules.next()?;
+        modules.next().is_none().then_some(module)
     }
 
     pub fn get(&self, module_name: &str) -> Option<&ParsedModule> {

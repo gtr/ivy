@@ -12,7 +12,7 @@ use thiserror::Error;
 
 use ivy_eval::{EvalError, Interpreter, Value};
 use ivy_parse::ParseError;
-use ivy_syntax::Program;
+use ivy_syntax::{hints, Program};
 use ivy_types::{unreachable_clause_warnings, TypeChecker, TypeError};
 
 const GREEN: &str = "\x1b[32m";
@@ -264,16 +264,23 @@ fn load_prelude(
             .ok()
             .and_then(|p| p.parent().and_then(|d| d.parent().map(|d| d.join(PRELUDE_FILE)))),
     ];
-    for path in prelude_paths.into_iter().flatten() {
-        if path.exists() {
-            if let Ok(source) = fs::read_to_string(&path) {
-                if let Ok(program) = ivy_parse::parse(&source) {
-                    let _ = ivy_types::check_program_with_env(&program, type_checker, type_env, loader);
-                    interp.load_program(&program);
-                }
+    let Some(path) = prelude_paths.into_iter().flatten().find(|path| path.exists()) else {
+        eprintln!("{}", hints::missing_prelude(PRELUDE_FILE));
+        return;
+    };
+    let filename = path.display().to_string();
+    let Ok(source) = fs::read_to_string(&path) else {
+        eprintln!("warning: couldn't read the prelude at {filename}");
+        return;
+    };
+    match ivy_parse::parse(&source) {
+        Ok(program) => {
+            if let Err(error) = ivy_types::check_program_with_env(&program, type_checker, type_env, loader) {
+                print_type_error(error, &source, &filename);
             }
-            break;
+            interp.load_program(&program);
         }
+        Err(error) => print_parse_error(error, &source, &filename),
     }
 }
 

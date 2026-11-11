@@ -391,6 +391,13 @@ impl TypeEnv {
         self.modules.get(module).and_then(|exports| exports.get(name))
     }
 
+    pub fn module_export_names(&self, module: &str) -> impl Iterator<Item = &str> {
+        self.modules
+            .get(module)
+            .into_iter()
+            .flat_map(|exports| exports.keys().map(String::as_str))
+    }
+
     pub fn is_module(&self, name: &str) -> bool {
         self.modules.contains_key(name)
     }

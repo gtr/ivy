@@ -1,6 +1,7 @@
 pub mod ast;
 pub mod decl;
 pub mod expr;
+pub mod hints;
 pub mod lit;
 pub mod op;
 pub mod pattern;
