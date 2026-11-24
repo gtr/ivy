@@ -76,10 +76,9 @@ impl ModuleLoader {
         }
     }
 
-    pub fn add_search_path(&mut self, path: PathBuf) {
-        if !self.search_paths.contains(&path) {
-            self.search_paths.push(path);
-        }
+    pub fn prepend_search_path(&mut self, path: PathBuf) {
+        self.search_paths.retain(|existing| *existing != path);
+        self.search_paths.insert(0, path);
     }
 
     pub fn search_paths(&self) -> &[PathBuf] {

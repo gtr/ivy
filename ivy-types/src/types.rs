@@ -428,6 +428,29 @@ impl Scheme {
 
         (ty, constraints)
     }
+
+    pub fn normalize(&self) -> Scheme {
+        let mut mapping = HashMap::new();
+        let mut next_id = 0;
+        let ty = self.ty.normalize_with_mapping(&mut mapping, &mut next_id);
+        let constraints = self
+            .constraints
+            .iter()
+            .map(|c| TraitConstraint {
+                trait_name: c.trait_name.clone(),
+                type_args: c
+                    .type_args
+                    .iter()
+                    .map(|t| t.normalize_with_mapping(&mut mapping, &mut next_id))
+                    .collect(),
+            })
+            .collect();
+        Scheme {
+            vars: vec![],
+            constraints,
+            ty,
+        }
+    }
 }
 
 impl fmt::Display for Scheme {

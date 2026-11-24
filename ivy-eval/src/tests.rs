@@ -659,9 +659,10 @@ mod loader_tests {
     }
 
     #[test]
-    fn test_add_search_path() {
-        let mut loader = ModuleLoader::new(vec![]);
-        loader.add_search_path(PathBuf::from("/some/path"));
+    fn test_prepend_search_path() {
+        let mut loader = ModuleLoader::new(vec![PathBuf::from("/a"), PathBuf::from("/b")]);
+        loader.prepend_search_path(PathBuf::from("/b"));
+        assert_eq!(loader.search_paths(), [PathBuf::from("/b"), PathBuf::from("/a")]);
     }
 
     #[test]

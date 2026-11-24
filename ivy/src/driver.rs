@@ -47,7 +47,7 @@ pub(crate) fn print_eval_error(error: EvalError, source: &str, filename: &str) {
     eprintln!("{:?}", miette::Report::new(SourcedError::new(error, source, filename)));
 }
 
-fn print_warnings(program: &Program, checker: &TypeChecker, source: &str, filename: &str) {
+pub(crate) fn print_warnings(program: &Program, checker: &TypeChecker, source: &str, filename: &str) {
     for warning in unreachable_clause_warnings(&program.declarations, &checker.registry) {
         eprintln!("{:?}", Report::new(SourcedError::new(warning, source, filename)));
     }
@@ -157,12 +157,14 @@ pub(crate) fn run_file(path: &str, show_tree: bool, type_check: bool, no_prelude
 /// Build search paths for a file, prepending its parent directory.
 fn build_search_paths(path: &str) -> Vec<PathBuf> {
     let mut search_paths = ivy_utils::get_default_search_paths();
-    if let Some(parent) = Path::new(path).parent() {
-        if let Ok(abs_parent) = fs::canonicalize(parent) {
-            search_paths.insert(0, abs_parent);
-        }
+    if let Some(dir) = file_dir(path) {
+        search_paths.insert(0, dir);
     }
     search_paths
+}
+
+pub(crate) fn file_dir(path: &str) -> Option<PathBuf> {
+    fs::canonicalize(Path::new(path).parent()?).ok()
 }
 
 /// Load the prelude into both the type checker and evaluator (parsed once).
